@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import { claudeDesktopPage } from '../src/desktop/claude-sessions.ts';
+const stored=[{id:'history',title:'同名会话',project_path:'E:/project',updated_at:'2026-10-31T12:00:00Z'},{id:'active',title:'旧名称',project_path:'E:/project',updated_at:'2026-10-20T12:00:00Z'}];
+const live={sessionId:'active',name:'当前桌面名称',cwd:'E:/project',status:'idle',entrypoint:'claude-desktop-3p'};
+let page=claudeDesktopPage(stored,[live]);
+assert.equal(page.sessions[0].id,'active');assert.equal(page.sessions[0].title,'当前桌面名称');assert.equal(page.sessions[0].canSend,true);assert.equal(page.sessions[0].status,'idle');
+assert.equal(page.sessions.find(s=>s.id==='history').canSend,false);
+console.log('OK active desktop session precedes history; same folder/title cannot grant send access');
+page=claudeDesktopPage(stored,[live,{...live}]);assert.equal(page.sessions.find(s=>s.id==='active').canSend,false);assert.match(page.sessions.find(s=>s.id==='active').notice,/多个进程/);
+console.log('OK duplicate writers fail closed');
+page=claudeDesktopPage(stored,[{...live,entrypoint:'cli'}]);assert.ok(page.sessions.every(s=>!s.canSend));
+console.log('OK CLI registration is not mistaken for a desktop session');
+page=claudeDesktopPage(stored,[{...live,sessionId:'new-active'}]);assert.equal(page.sessions[0].id,'new-active');assert.equal(page.sessions[0].canSend,true);
+console.log('OK a newly opened desktop session is visible before the history index catches up');

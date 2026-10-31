@@ -1,0 +1,462 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import crypto from 'node:crypto';
+import { spawnSync } from 'node:child_process';
+import { performance } from 'node:perf_hooks';
+
+const sleepBuffer = new Int32Array(new SharedArrayBuffer(4));
+const hash = value => crypto.createHash('sha256').update(value).digest('hex');
+const SENDING_STALE_MS = 60_000;
+const processStartCache = new Map();
+let ownMacProcessStartUtc;
+
+/** Read a stable, second-resolution creation token without locale/timezone drift. */
+export function readMacProcessStart(pid, { spawnImpl = spawnSync } = {}) {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return null;
+  let result;
+  try {
+    result = spawnImpl('/bin/ps', ['-p', String(pid), '-o', 'lstart='], {
+      encoding: 'utf8', timeout: 1000, maxBuffer: 16384,
+      env: { ...process.env, LC_ALL: 'C', TZ: 'UTC' },
+    });
+  } catch { return null; }
+  if (result.error || result.status !== 0 || typeof result.stdout !== 'string') return null;
+  const value = result.stdout.trim();
+  if (!/^(?:Sun|Mon|Tue|Wed|Thu|Fri|Sat) (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) {1,2}\d{1,2} \d{2}:\d{2}:\d{2} \d{4}$/.test(value)) return null;
+  const started = Date.parse(`${value} UTC`);
+  return Number.isFinite(started) ? new Date(started).toISOString() : null;
+}
+
+function validMacStartToken(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z$/.test(value)) return false;
+  const started = Date.parse(value);
+  return Number.isFinite(started) && new Date(started).toISOString() === value;
+}
+
+/** A failed process probe never gives a contender permission to steal a live PID's lock. */
+export function macLockOwnerAlive(owner, { isAlive = processAlive, readStart = readMacProcessStart } = {}) {
+  if (!Number.isSafeInteger(owner?.pid) || owner.pid <= 0 || !isAlive(owner.pid)) return false;
+  let actual;
+  try { actual = readStart(owner.pid); } catch { return true; }
+  if (!validMacStartToken(actual)) return true;
+  if (Object.hasOwn(owner, 'procStartUtc')) {
+    return !validMacStartToken(owner.procStartUtc) || actual === owner.procStartUtc;
+  }
+  // Older locks have only their wall-clock creation time. Recover them only if
+  // this live process demonstrably started later; close timestamps stay ambiguous.
+  return !Number.isSafeInteger(owner.createdAt) || owner.createdAt < 0 ||
+    Date.parse(actual) <= owner.createdAt + 5000;
+}
+
+function windowsProcessStartFt(pid) {
+  const now = Date.now();
+  const cached = processStartCache.get(pid);
+  if (cached && now - cached.at < 1000) return cached.value;
+  const result = spawnSync('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command',
+    `(Get-Process -Id ${pid} -ErrorAction Stop).StartTime.ToFileTimeUtc().ToString()`],
+  { encoding: 'utf8', windowsHide: true, timeout: 5000, maxBuffer: 16384 });
+  const value = !result.error && result.status === 0 && /^[0-9]+$/.test(result.stdout.trim())
+    ? result.stdout.trim() : null;
+  processStartCache.set(pid, { at: now, value });
+  return value;
+}
+
+function lockOwner(token) {
+  const owner = { pid: process.pid, token, createdAt: Date.now() };
+  if (process.platform === 'win32') owner.procStartMs = Math.round(performance.timeOrigin);
+  if (process.platform === 'darwin') {
+    // Only our own successful token is cached: this runtime cannot outlive its
+    // process. Foreign PID probes stay fresh during compare-before-unlink recovery.
+    ownMacProcessStartUtc ??= readMacProcessStart(process.pid);
+    if (ownMacProcessStartUtc) owner.procStartUtc = ownMacProcessStartUtc;
+  }
+  return owner;
+}
+
+function lockOwnerAlive(owner) {
+  if (process.platform === 'darwin') return macLockOwnerAlive(owner);
+  if (!Number.isSafeInteger(owner?.pid) || owner.pid <= 0 || !processAlive(owner.pid)) return false;
+  const age = Date.now() - owner.createdAt;
+  if (process.platform !== 'win32' || !Number.isSafeInteger(owner.procStartMs) ||
+      (Number.isSafeInteger(owner.createdAt) && age >= 0 && age < 1000)) return true;
+  const filetime = windowsProcessStartFt(owner.pid);
+  if (filetime === null) return true;
+  const actualMs = Number((BigInt(filetime) - 116444736000000000n) / 10000n);
+  return Math.abs(actualMs - owner.procStartMs) <= 5000;
+}
+
+function interruptedSend(record) {
+  if (record.status !== 'sending') return false;
+  if (Number.isSafeInteger(record.senderPid) && record.senderPid > 0 && !processAlive(record.senderPid)) return true;
+  return Number.isSafeInteger(record.createdAt) && Date.now() - record.createdAt > SENDING_STALE_MS;
+}
+
+function retryWindowsContention(error, until) {
+  if (process.platform !== 'win32' || !['EPERM', 'EACCES', 'EBUSY'].includes(error.code)) return false;
+  const remaining = until - Date.now();
+  if (remaining <= 0) return false;
+  Atomics.wait(sleepBuffer, 0, 0, Math.min(25, remaining));
+  return true;
+}
+
+export function defaultStateDir({ homeDir = os.homedir(), env = process.env } = {}) {
+  // Windows app packages can see different virtualized AppData directories.
+  // Both desktop apps must use the same user-owned location regardless of cwd.
+  return env.CODEX_CLAUDE_BRIDGE_STATE_DIR || path.join(homeDir, '.local', 'share', 'codex-claude-desktop-bridge');
+}
+
+function text(value, name, max = 65536) {
+  if (typeof value !== 'string' || !value.trim() || Buffer.byteLength(value) > max) {
+    throw new Error(`${name} must be nonempty text, at most ${max} UTF-8 bytes`);
+  }
+  return value;
+}
+
+function sessionAt(stateDir, key) {
+  if (!/^[a-f0-9]{64}$/.test(key || '')) throw new Error('Invalid session key');
+  const dir = path.join(path.resolve(stateDir || defaultStateDir()), key);
+  return { key, dir, stateFile: path.join(dir, 'state.json') };
+}
+
+function atomicJson(file, data) {
+  const tmp = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(data, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+    const deadline = Date.now() + 1000;
+    for (;;) {
+      try {
+        fs.renameSync(tmp, file);
+        break;
+      } catch (error) {
+        // Windows readers and sync clients can briefly prevent replacement.
+        // Retain the same prepared document and the caller's state lock; only
+        // this rename is retried, never the state callback or message delivery.
+        const remaining = deadline - Date.now();
+        if (process.platform !== 'win32' || !['EPERM', 'EACCES', 'EBUSY'].includes(error.code) || remaining <= 0) throw error;
+        Atomics.wait(sleepBuffer, 0, 0, Math.min(25, remaining));
+      }
+    }
+  } finally {
+    try { fs.unlinkSync(tmp); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  }
+}
+
+function createExclusiveJson(file, data) {
+  const temporary = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(temporary, JSON.stringify(data), { flag: 'wx', mode: 0o600 });
+    fs.linkSync(temporary, file);
+  } finally {
+    try { fs.unlinkSync(temporary); } catch {}
+  }
+}
+
+export function processAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; }
+  catch (e) { return e.code === 'EPERM'; }
+}
+
+function withLock(session, fn) {
+  fs.mkdirSync(session.dir, { recursive: true });
+  const lockPath = path.join(session.dir, 'state.lock');
+  const recoveryPath = path.join(session.dir, 'state.lock.recovery');
+  const token = crypto.randomUUID();
+  const owner = lockOwner(token);
+  const until = Date.now() + 5000;
+  let acquired = false;
+  while (!acquired) {
+    try {
+      createExclusiveJson(lockPath, owner);
+      acquired = true;
+    } catch (e) {
+      if (e.code !== 'EEXIST') {
+        // Windows can deny an exclusive open while another process closes or
+        // removes its lock. Retry acquisition without assuming we own it.
+        if (retryWindowsContention(e, until)) continue;
+        throw e;
+      }
+      let stale = false;
+      try {
+        const owner = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+        stale = Number.isInteger(owner?.pid) && owner.pid > 0 && !lockOwnerAlive(owner);
+      } catch (err) {
+        if (err.code === 'ENOENT') continue;
+        // A transient sharing violation can also race a lock replacement.
+        if (retryWindowsContention(err, until)) continue;
+        // A legacy incomplete lock has no verifiable PID, so it is never stolen.
+        if (!(err instanceof SyntaxError)) throw err;
+      }
+      if (stale) {
+        let recoveryOwned = false;
+        try {
+          createExclusiveJson(recoveryPath, owner);
+          recoveryOwned = true;
+        }
+        catch (guardError) {
+          // Windows can briefly deny exclusive creation while another process
+          // releases this guard. A failed link grants no ownership: wait within
+          // the existing deadline, then reread the main lock on the next pass.
+          if (retryWindowsContention(guardError, until)) continue;
+          if (guardError.code !== 'EEXIST') throw guardError;
+          // Recovery guards are never automatically reclaimed: recursively
+          // recovering them would recreate the same compare/unlink race.
+          try {
+            const recovering = JSON.parse(fs.readFileSync(recoveryPath, 'utf8'));
+            if (Number.isInteger(recovering?.pid) && recovering.pid > 0 && !lockOwnerAlive(recovering)) {
+              throw new Error('Bridge lock recovery was interrupted; inspect state.lock.recovery before retrying');
+            }
+          } catch (readError) {
+            if (readError.code === 'ENOENT') continue;
+            // Reading another process's guard can briefly fail while it closes
+            // or removes the file. A failed read gives us no recovery ownership.
+            if (retryWindowsContention(readError, until)) continue;
+            if (!(readError instanceof SyntaxError)) throw readError;
+          }
+        }
+        if (recoveryOwned) {
+          try {
+            // Only this recovery owner can remove a stale lock. Always reread
+            // after taking the guard: the initial observation may be obsolete.
+            for (;;) {
+              try {
+                const owner = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+                if (Number.isInteger(owner?.pid) && owner.pid > 0 && !lockOwnerAlive(owner)) fs.unlinkSync(lockPath);
+                break;
+              } catch (readError) {
+                if (readError.code === 'ENOENT' || readError instanceof SyntaxError) break;
+                // If a Windows reader prevents access or deletion, inspect the
+                // lock again before the next unlink attempt. Never rely on an
+                // earlier stale-owner observation.
+                if (retryWindowsContention(readError, until)) continue;
+                throw readError;
+              }
+            }
+          } finally {
+            const cleanupUntil = Date.now() + 1000;
+            for (;;) {
+              try { fs.unlinkSync(recoveryPath); break; }
+              catch (cleanupError) {
+                if (cleanupError.code === 'ENOENT') break;
+                if (retryWindowsContention(cleanupError, cleanupUntil)) continue;
+                throw cleanupError;
+              }
+            }
+          }
+          continue;
+        }
+      }
+      if (Date.now() >= until) throw new Error('Bridge state is busy; retry with the same message ID');
+      Atomics.wait(sleepBuffer, 0, 0, 15);
+    }
+  }
+  try { return fn(); }
+  finally {
+    const cleanupUntil = Date.now() + 1000;
+    for (;;) {
+      try {
+        const owner = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+        if (owner.token === token) fs.unlinkSync(lockPath);
+        break;
+      } catch (e) {
+        if (e.code === 'ENOENT') break;
+        // Recheck our token after a temporary sharing violation so cleanup
+        // cannot remove a replacement lock owned by another process.
+        if (retryWindowsContention(e, cleanupUntil)) continue;
+        throw e;
+      }
+    }
+  }
+}
+
+export function readSession(session) {
+  const state = JSON.parse(fs.readFileSync(session.stateFile || path.join(session.dir, 'state.json'), 'utf8'));
+  if (!state || typeof state !== 'object' || state.schemaVersion !== 1 || state.key !== session.key ||
+      typeof state.threadId !== 'string' || hash(state.threadId) !== state.key || typeof state.cwd !== 'string') {
+    throw new Error('Invalid bridge state');
+  }
+  // Earlier builds stored tasks under requests. Retain that history without
+  // allowing old tasks or deadlines to affect asynchronous messaging.
+  if (state.messages === undefined) state.messages = {};
+  if (!state.messages || typeof state.messages !== 'object' || Array.isArray(state.messages)) throw new Error('Invalid bridge messages');
+  if (state.desktop === undefined) state.desktop = null;
+  return state;
+}
+
+function update(session, fn) {
+  return withLock(session, () => {
+    const state = readSession(session);
+    const result = fn(state);
+    atomicJson(session.stateFile || path.join(session.dir, 'state.json'), state);
+    return result;
+  });
+}
+
+export function createSession({ stateDir, threadId, cwd }) {
+  text(threadId, 'threadId', 512);
+  const realCwd = fs.realpathSync(text(cwd, 'cwd', 32768));
+  if (!fs.statSync(realCwd).isDirectory()) throw new Error('cwd must be a directory');
+  const session = sessionAt(stateDir, hash(threadId));
+  return withLock(session, () => {
+    let state;
+    if (fs.existsSync(session.stateFile)) {
+      state = readSession(session);
+      if (state.cwd !== realCwd) throw new Error(`This chat is already bound to ${state.cwd}`);
+    } else {
+      state = { schemaVersion: 1, key: session.key, threadId, cwd: realCwd,
+        createdAt: Date.now(), desktop: null, messages: {} };
+      atomicJson(session.stateFile, state);
+    }
+    return { ...session, threadId: state.threadId, cwd: state.cwd };
+  });
+}
+
+export function loadSession({ stateDir, sessionKey }) {
+  const session = sessionAt(stateDir, sessionKey);
+  const state = readSession(session);
+  return { ...session, threadId: state.threadId, cwd: state.cwd };
+}
+
+export function getSession({ stateDir, threadId }) {
+  text(threadId, 'threadId', 512);
+  try { return loadSession({ stateDir, sessionKey: hash(threadId) }); }
+  catch (e) { if (e.code === 'ENOENT') return null; throw e; }
+}
+
+function messageId(value) {
+  if (typeof value !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(value) ||
+      value === 'prototype' || Object.hasOwn(Object.prototype, value)) throw new Error('Invalid message ID');
+  return value;
+}
+
+function validatePairId(pairId) {
+  if (pairId !== undefined && (typeof pairId !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(pairId) ||
+      pairId === 'prototype' || Object.hasOwn(Object.prototype, pairId))) throw new Error('Invalid pair ID');
+  return pairId;
+}
+
+function validateEndpoint(endpoint, name) {
+  if (!endpoint || typeof endpoint !== 'object' || Array.isArray(endpoint) ||
+      Object.keys(endpoint).some(key => !['kind', 'id', 'host_id'].includes(key)) ||
+      !Object.hasOwn(endpoint, 'kind') || !Object.hasOwn(endpoint, 'id') ||
+      !['codex', 'claude'].includes(endpoint.kind)) throw new Error('Invalid message route');
+  const hosted = Object.hasOwn(endpoint, 'host_id');
+  if (hosted && (endpoint.kind !== 'codex' || typeof endpoint.host_id !== 'string' ||
+      !/^ssh:[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(endpoint.host_id) || /[\r\n]/.test(endpoint.host_id))) {
+    throw new Error('Invalid message route host');
+  }
+  // Omit the host field for local routes so their existing persisted keys remain stable.
+  return { kind: endpoint.kind, id: text(endpoint.id, `${name}.id`, 512),
+    ...(hosted ? { host_id: endpoint.host_id } : {}) };
+}
+
+function validateRoute(route) {
+  if (route === undefined) return undefined;
+  if (!route || typeof route !== 'object' || Array.isArray(route) ||
+      Object.keys(route).length !== 2 || !Object.hasOwn(route, 'from') || !Object.hasOwn(route, 'to')) {
+    throw new Error('Invalid message route');
+  }
+  const endpoints = ['from', 'to'].map(name => validateEndpoint(route[name], `route.${name}`));
+  if (endpoints[0].kind === endpoints[1].kind) throw new Error('Invalid message route');
+  return { from: endpoints[0], to: endpoints[1] };
+}
+
+function messageKey(id, pairId, route) {
+  messageId(id);
+  validatePairId(pairId);
+  if (route !== undefined) {
+    if (pairId !== undefined) throw new Error('Message route and pair ID cannot be combined');
+    return `route:${hash(JSON.stringify(route))}:${id}`;
+  }
+  return pairId === undefined ? id : `${pairId}:${id}`;
+}
+
+export function recordMessage(session, { id = crypto.randomUUID(), pairId, direction, message, route, manual = false } = {}) {
+  if (typeof manual !== 'boolean') throw new Error('manual must be a boolean');
+  const savedRoute = validateRoute(route);
+  const key = messageKey(id, pairId, savedRoute);
+  if (!['to_claude', 'to_codex'].includes(direction)) throw new Error('direction must be to_claude or to_codex');
+  if (savedRoute && savedRoute.to.kind !== direction.slice(3)) throw new Error('direction does not match message route');
+  text(message, 'message');
+  const fingerprint = hash(JSON.stringify({ direction, message, ...(savedRoute === undefined ? {} : { route: savedRoute }) }));
+  return update(session, state => {
+    if (Object.hasOwn(state.messages, key)) {
+      const existing = state.messages[key];
+      if (existing.pairId !== pairId) throw new Error('Message does not belong to this pair');
+      if (JSON.stringify(existing.route) !== JSON.stringify(savedRoute)) throw new Error('Message ID already belongs to a different route');
+      if (existing.direction !== direction || existing.message !== message) throw new Error('Message ID already belongs to different content or direction');
+      if (Boolean(existing.manual) !== manual) throw new Error('Message ID already belongs to a different sending origin');
+      if (interruptedSend(existing)) {
+        existing.status = 'uncertain';
+        existing.updatedAt = Date.now();
+        existing.error = 'The sending process ended or did not record an outcome; delivery is uncertain.';
+      }
+      return { message: existing, created: false };
+    }
+    const record = { id, ...(pairId === undefined ? {} : { pairId }), ...(savedRoute === undefined ? {} : { route: savedRoute }),
+      direction, message, ...(manual ? { manual: true } : {}), createdAt: Date.now(), senderPid: process.pid, status: 'sending', fingerprint };
+    state.messages[key] = record;
+    return { message: record, created: true };
+  });
+}
+
+function jsonValue(value, name) {
+  if (value === undefined) return undefined;
+  try {
+    const serialized = JSON.stringify(value);
+    if (serialized === undefined || Buffer.byteLength(serialized) > 131072) throw new Error('Invalid JSON value');
+    return JSON.parse(serialized);
+  } catch {
+    throw new Error(`${name} must be JSON-serializable and at most 131072 UTF-8 bytes`);
+  }
+}
+
+export function finishMessage(session, id, { status, error, receipt, pairId, route } = {}) {
+  const savedRoute = validateRoute(route);
+  const key = messageKey(id, pairId, savedRoute);
+  if (!['submitted', 'failed', 'uncertain'].includes(status)) throw new Error('status must be submitted, failed, or uncertain');
+  const savedError = jsonValue(error, 'error');
+  const savedReceipt = jsonValue(receipt, 'receipt');
+  return update(session, state => {
+    if (!Object.hasOwn(state.messages, key)) throw new Error('Message does not belong to this session or pair');
+    const record = state.messages[key];
+    if (record.pairId !== pairId) throw new Error('Message does not belong to this pair');
+    if (JSON.stringify(record.route) !== JSON.stringify(savedRoute)) throw new Error('Message does not belong to this route');
+    record.status = status;
+    record.updatedAt = Date.now();
+    if (savedError === undefined) delete record.error;
+    else record.error = savedError;
+    if (savedReceipt === undefined) delete record.receipt;
+    else record.receipt = savedReceipt;
+    return record;
+  });
+}
+
+export function getMessages(session, limit = 20, pairId, from) {
+  if (!Number.isSafeInteger(limit) || limit < 0) throw new Error('limit must be a nonnegative integer');
+  validatePairId(pairId);
+  if (from !== undefined && pairId !== undefined) throw new Error('Message sender and pair ID cannot be combined');
+  const savedFrom = from === undefined ? undefined : validateEndpoint(from, 'from');
+  return Object.values(readSession(session).messages).reverse()
+    .filter(record => (pairId === undefined || record.pairId === pairId) &&
+      (savedFrom === undefined || (record.route?.from?.kind === savedFrom.kind && record.route.from.id === savedFrom.id &&
+        record.route.from.host_id === savedFrom.host_id)))
+    .sort((left, right) => right.createdAt - left.createdAt).slice(0, limit)
+    .map(record => {
+      const visible = Object.fromEntries(
+        ['id', 'pairId', 'route', 'direction', 'message', 'manual', 'createdAt', 'status', 'fingerprint', 'updatedAt', 'error', 'receipt']
+          .filter(key => Object.hasOwn(record, key)).map(key => [key, record[key]]),
+      );
+      if (interruptedSend(record)) {
+        visible.status = 'uncertain';
+        visible.error = 'The sending process ended or did not record an outcome; delivery is uncertain.';
+      }
+      return visible;
+    });
+}
+
+// Used by the native Desktop transport to persist outbox receipts without storing credentials.
+export function updateSession(session, fn) { return update(session, fn); }
+
+export function withStateLock(directory, fn) { return withLock({ dir: directory }, fn); }

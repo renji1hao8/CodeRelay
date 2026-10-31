@@ -1,0 +1,361 @@
+import { connect } from 'node:net';
+import { createHash, randomUUID } from 'node:crypto';
+import { join, resolve } from 'node:path';
+import { closeSync, fstatSync, lstatSync, openSync, readdirSync, readSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { canonicalLocalSocket } from './local-socket.mjs';
+import { assertClaudeProcessIdentity } from './claude-process.mjs';
+
+// Claude Code native inbox transport. The socket and authentication remain
+// stable across current releases; the peer envelope below follows the
+// receiver's cross-session message format.
+const MAX_FRAME_CHARS = 1_048_576;
+const MAX_CONNECTION_MS = 10_000;
+const CLAUDE_PEER_TAG = 'cross-session-message';
+// `claude -p` registers as sdk-cli, including when its input is stream-json.
+// `claude-desktop-3p` is the entrypoint written by the Claude Desktop third-party
+// API build (installed under AppData\Local\Claude-3p). It exposes the same native
+// messaging inbox as `claude-desktop`; identity is still verified by PID,
+// process-start token, socket, and key below.
+export const CLAUDE_ENTRYPOINTS = new Set(['claude-desktop', 'claude-desktop-3p', 'cli', 'sdk-cli']);
+// Kept out of JSON diagnostics; object spread preserves this private context
+// when a resolved endpoint is passed to sendToClaude by the service.
+const RESOLVED_SESSION = Symbol('resolvedClaudeSession');
+
+// Preserve the v0.3.3 peer envelope: omitting from-mode="bypass" reintroduces
+// issue #1, where Bypass recipients silently hold native bridge messages.
+// This is the bridge's existing wire classification, not a detected Codex
+// permission mode or a change to the recipient's settings. Explicit Claude
+// inbound rules still apply. Keep nested terminators inside the outer envelope.
+function claudePeerContent(message, senderName) {
+  const safeName = senderName.replace(/["<>\r\n\0]/g, ' ').trim().slice(0, 64);
+  const name = safeName ? ` from-name="${safeName}"` : '';
+  const body = message.replace(/<\/cross-session-message\b/gi, '<\\/cross-session-message');
+  return `<${CLAUDE_PEER_TAG}${name} from-mode="bypass">\n${body}\n</${CLAUDE_PEER_TAG}>`;
+}
+
+function cancelled() {
+  return Object.assign(new Error('Bridge request was cancelled.'), { name: 'AbortError', code: 'ABORT_ERR' });
+}
+
+function checkCancellation(signal) {
+  if (signal?.aborted) throw cancelled();
+}
+
+export function canonicalClaudeSocket(socketPath) {
+  return canonicalLocalSocket(socketPath);
+}
+
+const canonicalPipe = canonicalClaudeSocket;
+
+function checkEndpoint(socketPath) {
+  if (typeof socketPath !== 'string' || !socketPath || /[\r\n\0]/.test(socketPath)) {
+    throw new Error('Claude messaging socket is missing or invalid. Select the intended Claude Code session.');
+  }
+  if (canonicalPipe(socketPath) === null) {
+    throw new Error('Claude messaging endpoint must be a local named pipe on Windows or an absolute Unix socket path.');
+  }
+}
+
+function registryLocation(registryDir) {
+  const directory = resolve(registryDir ?? join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'sessions'));
+  const stat = lstatSync(directory);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('Claude session registry must be a real directory.');
+  return directory;
+}
+
+function readRegularJson(file, maxBytes) {
+  const before = lstatSync(file);
+  if (!before.isFile() || before.isSymbolicLink() || before.size > maxBytes) {
+    throw new Error('Claude registry entry is not a regular file of the expected size.');
+  }
+  const fd = openSync(file, 'r');
+  try {
+    const opened = fstatSync(fd);
+    if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino || opened.size > maxBytes) {
+      throw new Error('Claude registry entry changed while it was opened.');
+    }
+    const data = Buffer.alloc(maxBytes + 1);
+    const bytesRead = readSync(fd, data, 0, data.length, 0);
+    if (bytesRead > maxBytes) throw new Error('Claude registry entry exceeds its size limit.');
+    const after = lstatSync(file);
+    if (!after.isFile() || after.isSymbolicLink() || after.dev !== opened.dev || after.ino !== opened.ino) {
+      throw new Error('Claude registry entry changed while it was read.');
+    }
+    const value = JSON.parse(data.subarray(0, bytesRead).toString('utf8'));
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid Claude registry entry.');
+    return value;
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function processIsAlive(pid) {
+  try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; }
+}
+
+function metadata(record) {
+  return {
+    sessionId: record.sessionId,
+    pid: record.pid,
+    name: record.name ?? '',
+    cwd: record.cwd ?? '',
+    status: record.status ?? 'unknown',
+    version: record.version ?? '',
+    entrypoint: record.entrypoint,
+    hostSessionId: record.hostSessionId ?? null,
+    procStart: record.procStart,
+    pidDomain: record.pidDomain,
+  };
+}
+
+function nativeRecords(directory) {
+  const records = [];
+  for (const filename of readdirSync(directory)) {
+    const match = /^([1-9][0-9]*)\.json$/.exec(filename);
+    if (!match) continue;
+    let record;
+    try { record = readRegularJson(join(directory, filename), 65_536); } catch { continue; }
+    if (record.pid !== Number(match[1]) || !Number.isSafeInteger(record.pid) || record.pid <= 0) continue;
+    if (!CLAUDE_ENTRYPOINTS.has(record.entrypoint) || typeof record.sessionId !== 'string' || !record.sessionId.trim()) continue;
+    if (typeof record.procStart !== 'string' || !record.procStart || typeof record.pidDomain !== 'string') continue;
+    if (!canonicalPipe(record.messagingSocketPath) || !processIsAlive(record.pid)) continue;
+    records.push(record);
+  }
+  return records;
+}
+
+/** List live native Claude Code Desktop and CLI sessions without exposing credentials or endpoints. */
+export function discoverClaudeSessions({ registryDir } = {}) {
+  let directory;
+  try { directory = registryLocation(registryDir); } catch (error) {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  }
+  return nativeRecords(directory).map(metadata);
+}
+
+function sameSessionIdentity(left, right) {
+  return left.sessionId === right.sessionId && left.pid === right.pid && left.entrypoint === right.entrypoint &&
+    left.procStart === right.procStart && left.pidDomain === right.pidDomain &&
+    canonicalPipe(left.messagingSocketPath ?? left.socketPath) === canonicalPipe(right.messagingSocketPath ?? right.socketPath);
+}
+
+function assertProcessStart(record) {
+  assertClaudeProcessIdentity(record);
+}
+
+/** Resolve one live native Claude Code session. Its key is used only for identity checks
+ * and sends, never copied into bridge configuration or included in diagnostics.
+ */
+export function resolveClaudeSession(sessionId, { registryDir } = {}) {
+  if (typeof sessionId !== 'string' || !sessionId.trim()) throw new Error('An explicit Claude session ID is required.');
+  const directory = registryLocation(registryDir);
+  const records = nativeRecords(directory).filter(record => record.sessionId === sessionId);
+  if (records.length === 0) throw new Error('The chosen Claude Code session is unavailable or has no live inbox.');
+  if (records.length !== 1) throw new Error('More than one process claims this Claude session. Close the duplicate before connecting.');
+  const record = records[0];
+  assertProcessStart(record);
+  const socketPath = canonicalPipe(record.messagingSocketPath);
+  const keyHash = createHash('sha256').update(socketPath).digest('hex');
+  let key;
+  try { key = readRegularJson(join(directory, `${record.pid}.${keyHash}.key`), 4096); } catch {
+    throw new Error('The chosen Claude session has no readable regular inbox key. Reopen that Code session.');
+  }
+  if (typeof key.peerToken !== 'string' || !/^[a-f0-9]{32}$/.test(key.peerToken) ||
+      (key.procStartFt ?? key.procStart) !== record.procStart || key.pidDomain !== record.pidDomain) {
+    throw new Error('Claude inbox key does not match the selected session process.');
+  }
+  // Catch a restart or registry replacement that occurred during the key read.
+  const current = readRegularJson(join(directory, `${record.pid}.json`), 65_536);
+  if (!sameSessionIdentity(current, record) || !processIsAlive(record.pid)) {
+    throw new Error('Claude session changed while resolving its inbox. Select its current conversation and retry.');
+  }
+  const endpoint = Object.freeze({ ...metadata(record), socketPath, token: key.peerToken });
+  return { ...endpoint, [RESOLVED_SESSION]: Object.freeze({ directory, endpoint }) };
+}
+
+function verifyResolvedSession(resolved, { socketPath, token, sessionId }) {
+  const expected = resolved.endpoint;
+  if (canonicalPipe(socketPath) !== expected.socketPath || token !== expected.token || sessionId !== expected.sessionId) {
+    throw new Error('Claude destination differs from the selected session. Select its current conversation and retry.');
+  }
+  const current = resolveClaudeSession(expected.sessionId, { registryDir: resolved.directory });
+  if (!sameSessionIdentity(current, expected) || current.token !== expected.token) {
+    throw new Error('Claude destination changed before the message was written. Select its current conversation and retry.');
+  }
+}
+
+/** Identify the Claude Code conversation that spawned this bridge instance.
+ * Only the direct registered parent is accepted. An exported socket must match
+ * that parent; neither project paths nor recency identify a calling session.
+ */
+export function resolveClaudeCaller({ registryDir, parentPid = process.ppid,
+  socketPath = process.env.CLAUDE_CODE_MESSAGING_SOCKET } = {}) {
+  let directory;
+  try { directory = registryLocation(registryDir); } catch (error) {
+    if (error.code === 'ENOENT') throw new Error('Claude caller is unavailable. Open the bridge in the intended Claude Code session.');
+    throw error;
+  }
+  const ownSocket = socketPath === undefined ? null : canonicalClaudeSocket(socketPath);
+  if (socketPath !== undefined && !ownSocket) throw new Error('Claude caller exported an invalid messaging socket. Reload the bridge in that Code session.');
+  if (!Number.isSafeInteger(parentPid) || parentPid <= 0) {
+    throw new Error('Claude caller has no valid direct parent process. Reload the bridge from the intended Code session.');
+  }
+  const matches = nativeRecords(directory).filter(record => record.pid === parentPid &&
+    (!ownSocket || canonicalClaudeSocket(record.messagingSocketPath) === ownSocket));
+  if (matches.length === 0) {
+    throw new Error('Cannot identify the calling Claude Code session from its direct parent and socket. Reload its bridge MCP server; launch it directly without an intermediary shell.');
+  }
+  if (matches.length !== 1) throw new Error('Claude caller identity is ambiguous; more than one session claims its messaging endpoint.');
+  const matched = matches[0];
+  const endpoint = resolveClaudeSession(matched.sessionId, { registryDir: directory });
+  if (!sameSessionIdentity(endpoint, matched)) {
+    throw new Error('Claude caller changed while resolving its identity. Reload the bridge in that Code session.');
+  }
+  return endpoint;
+}
+
+function checkToken(token) {
+  if (typeof token !== 'string' || !token.trim() || token.length > 4096 || /[\r\n\0]/.test(token)) {
+    throw new Error('Claude messaging token is missing or invalid. Select the intended Claude Code session.');
+  }
+}
+
+/** Read only the credentials exported by the Claude session running this command.
+ * Never print the returned token, and never discover a different session's key.
+ */
+export function getClaudeEnvironment(env = process.env) {
+  const socketPath = env.CLAUDE_CODE_MESSAGING_SOCKET;
+  const token = env.CLAUDE_CODE_MESSAGING_TOKEN;
+  checkEndpoint(socketPath);
+  checkToken(token);
+  return { socketPath, token };
+}
+
+/** Test local inbox connectivity without authenticating or sending a message. */
+export async function probeClaudeInbox({ socketPath, signal, timeoutMs = 1500 }) {
+  checkCancellation(signal);
+  checkEndpoint(socketPath);
+  return new Promise((resolveProbe, rejectProbe) => {
+    const socket = connect({ path: socketPath });
+    let finished = false;
+    const timeout = setTimeout(() => finish(new Error('The selected Claude inbox did not accept a local connection.')), timeoutMs);
+    function finish(error) {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timeout);
+      signal?.removeEventListener('abort', onAbort);
+      socket.destroy();
+      if (error) rejectProbe(error);
+      else resolveProbe();
+    }
+    function onAbort() { finish(cancelled()); }
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) onAbort();
+    socket.once('connect', () => finish());
+    socket.once('error', () => finish(new Error('The selected Claude inbox is unavailable. Reopen that Code session.')));
+    socket.once('close', () => {
+      if (!finished) finish(new Error('The selected Claude inbox closed during its connectivity check.'));
+    });
+  });
+}
+
+/** Write one authenticated message. This protocol does not acknowledge delivery
+ * to the model: a successful result confirms only the completed transport write.
+ * A later reply is a separate, optional bridge message.
+ */
+export async function sendToClaude({ socketPath, token, message, senderName = 'Codex desktop bridge', sessionId, signal,
+  [RESOLVED_SESSION]: resolved }) {
+  checkCancellation(signal);
+  checkEndpoint(socketPath);
+  checkToken(token);
+  if (typeof message !== 'string' || !message.trim()) throw new Error('Claude message must be nonempty text.');
+  if (typeof senderName !== 'string' || !senderName.trim() || senderName.length > 200 || /[\r\n\0]/.test(senderName)) {
+    throw new Error('senderName must be one line of text, at most 200 characters.');
+  }
+  if (sessionId !== undefined && (typeof sessionId !== 'string' || !sessionId.trim() || sessionId.length > 200)) {
+    throw new Error('sessionId must identify the explicitly selected Claude session.');
+  }
+  const messageId = randomUUID();
+  const authLine = JSON.stringify({ type: 'auth', token });
+  const messageLine = JSON.stringify({
+    type: 'user',
+    uuid: messageId,
+    priority: 'next',
+    from: senderName,
+    ...(sessionId === undefined ? {} : { session_id: sessionId }),
+    message: { role: 'user', content: claudePeerContent(message, senderName) },
+  });
+  // The receiver checks the accumulated UTF-16 string before splitting lines,
+  // so limit the entire write, including the auth line and delimiters.
+  if (authLine.length + messageLine.length + 2 > MAX_FRAME_CHARS) {
+    throw new Error('Claude message exceeds the inbox transport limit. Send a shorter message.');
+  }
+  const payload = `${authLine}\n${messageLine}\n`;
+  return await new Promise((resolveSend, rejectSend) => {
+    let finished = false;
+    let writeFinished = false;
+    let writeAttempted = false;
+    let remoteEnded = false;
+    const socket = connect({ path: socketPath, allowHalfOpen: true });
+    const timeout = setTimeout(() => finish(new Error('Claude inbox connection timed out. Check that the selected Code session is open.')), MAX_CONNECTION_MS);
+
+    function finish(error) {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timeout);
+      signal?.removeEventListener('abort', onAbort);
+      socket.destroy();
+      if (error) {
+        error.deliveryUnknown = writeAttempted;
+        if (writeAttempted && error.name === 'AbortError') {
+          error.message += ' Delivery is uncertain; inspect the selected conversation before retrying.';
+        }
+        rejectSend(error);
+      }
+      else resolveSend({ status: 'written', messageId, acknowledged: false });
+    }
+
+    function onAbort() { finish(cancelled()); }
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) onAbort();
+
+    socket.on('error', error => {
+      // Do not include the endpoint, token, payload, or OS error text in logs.
+      const code = typeof error.code === 'string' ? error.code : 'CONNECTION_ERROR';
+      finish(new Error(`Cannot write to the selected Claude Code session (${code}). Select it again if that session restarted.`));
+    });
+    socket.once('connect', () => {
+      if (finished) return;
+      if (signal?.aborted) { onAbort(); return; }
+      // CLI /clear and /resume can replace the conversation while preserving
+      // the PID, socket, and token. Recheck after connecting, before writing
+      // any bytes. The native protocol has no atomic session-bound delivery
+      // or acknowledgement, so this cannot cover a switch after this check.
+      if (resolved) {
+        try { verifyResolvedSession(resolved, { socketPath, token, sessionId }); }
+        catch (error) { finish(error); return; }
+      }
+      if (signal?.aborted) { onAbort(); return; }
+      writeAttempted = true;
+      socket.end(payload);
+    });
+    socket.once('finish', () => {
+      writeFinished = true;
+      if (remoteEnded) finish();
+    });
+    socket.on('data', () => {
+      // No response frames are defined by the own-child inbox protocol.
+    });
+    socket.once('end', () => {
+      remoteEnded = true;
+      if (writeFinished) finish();
+    });
+    socket.once('close', hadError => {
+      if (finished) return;
+      if (!hadError && writeFinished && remoteEnded) finish();
+      else finish(new Error('Claude inbox closed before the transport write completed.'));
+    });
+  });
+}

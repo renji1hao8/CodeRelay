@@ -1,0 +1,24 @@
+{
+  "source": "https://github.com/KeeVeeG/codex-claude-desktop-bridge",
+  "version": "0.4.0+codex.20261018091817342",
+  "license": "MIT",
+  "note": "Transport snapshot with existing local compatibility patches; runtime adapters are not modified by this vendoring step.",
+  "files": {
+    "lib/bridge-history.mjs": "b6164530447618a78fdacae159c4676af024e97c41e1b05ff7fb39af32a72d19",
+    "lib/claude-desktop.mjs": "0177974fef8b4c655acb20ee980b9db597ae2583f896b2dca5e45ed639840763",
+    "lib/claude-history.mjs": "75e7a70caba218c354c5efba4a94dd1d4d84389ec9c32e1e4fec30a2f25ce60d",
+    "lib/claude-process.mjs": "546ac0697a0198287002c2eb8842554c362dbccf3ba390e92a02edb29b043e22",
+    "lib/codex-binary.mjs": "5cfdcca20a1b6f1e10df060030996c8a6b8dd8d85103cd4d4c86890977d12953",
+    "lib/codex-daemon.mjs": "81204ebe1519aad23a3285719b77db92a05ad381571692cb08288ca551b8acde",
+    "lib/codex-desktop.mjs": "56e51ca4cc645e64f1a3708503e9f0874cbb1d9431a5c784694d18ca4b341a9e",
+    "lib/codex-host.mjs": "044966a4636694020d3aeb629ce67dd9ce58ff62a3343a65164b1f3dd0bddb21",
+    "lib/codex-peer.mjs": "27020010f2aecbf99f3fbb79da9a1ec8b3b9b7d5b903ea29c0bcf7be069b27bb",
+    "lib/codex-settings.mjs": "7309342d2aa716860141f184662096a94a5a9a0185fa5ffb58fb10ec6122811a",
+    "lib/codex-ssh.mjs": "17980e456aa44e4fde2f758ad196067b70cf43fbcc34eb199d741126270fc89c",
+    "lib/desktop-service.mjs": "a65d170bbea231b0e5f6f5a1cc44bc15361f29bd66af9a7a938a9cc5c4cb6147",
+    "lib/local-socket.mjs": "55d4f6b59ece146654810b21492a0e4dfacfc4349099a36e6d535f380333fca4",
+    "lib/manual-service.mjs": "1c934978a50eff9c4894bf1f9b0cf54292edd6d434ea000e4666b66cb06a3cee",
+    "lib/store.mjs": "5e10723d57866049446b0299e12fc55286ca34d46177b3c8137905a2c1656582",
+    "lib/ws-jsonrpc.mjs": "fc286cb36d4aae0b0859a62f15926a11ac9cc5b65c6087ed098335a19713676e"
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "name": "@remote-cc/mobile",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.ts",
+  "scripts": {
+    "postinstall": "node scripts/build-terminal.mjs",
+    "prestart": "node scripts/build-terminal.mjs",
+    "preandroid": "node scripts/build-terminal.mjs",
+    "pretypecheck": "node scripts/build-terminal.mjs",
+    "start": "expo start",
+    "android": "expo run:android",
+    "sync:protocol": "node scripts/sync-protocol.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@expo/vector-icons": "^15.0.2",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
+    "expo": "~58.0.22",
+    "expo-clipboard": "~58.0.4",
+    "expo-document-picker": "~58.0.4",
+    "expo-file-system": "~58.0.13",
+    "expo-font": "~58.0.11",
+    "expo-image-manipulator": "~58.0.16",
+    "expo-image-picker": "~58.0.10",
+    "expo-secure-store": "~58.0.2",
+    "expo-status-bar": "~58.0.4",
+    "markdown-it": "^15.0.2",
+    "markdown-it-cjk-friendly": "2.0.3",
+    "prism-react-renderer": "^2.4.1",
+    "prismjs": "^1.30.0",
+    "react": "19.3.0",
+    "react-native": "0.88.1",
+    "react-native-keyboard-controller": "1.22.7",
+    "react-native-reanimated": "4.7.1",
+    "react-native-safe-area-context": "~5.10.1",
+    "react-native-webview": "14.0.1",
+    "react-native-worklets": "0.13.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.3.0",
+    "jimp-compact": "0.16.1",
+    "typescript": "~6.0.3"
+  },
+  "license": "MIT",
+  "overrides": {
+    "glob": "14.0.2",
+    "minimatch": "11.0.1"
+  }
+}

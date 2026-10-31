@@ -1,0 +1,12 @@
+serverAddr = "tunnel.example.com"
+serverPort = 7000
+auth.method = "token"
+auth.token = "{{FRP_TOKEN}}"
+
+[[proxies]]
+name = "remotecc"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 8787
+remotePort = 18787
+# Terminate TLS at the external entry and restrict access there.

@@ -1,0 +1,7 @@
+packages:
+  - "packages/*"
+  - "server"
+# mobile/ 用 npm 独立安装:React Native 与 pnpm 的链接方式有已知摩擦,不值得在这里冒险
+allowBuilds:
+  esbuild: true
+  node-pty: true

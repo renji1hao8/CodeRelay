@@ -1,0 +1,19 @@
+{
+  "name": "remote-cc",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev:server": "pnpm --filter @remote-cc/server dev",
+    "typecheck": "pnpm -r typecheck",
+    "start": "node --env-file-if-exists=.env server/src/index.ts",
+    "doctor": "node scripts/doctor.mjs",
+    "test": "node scripts/test.mjs",
+    "audit:public": "node scripts/audit-public-source.mjs",
+    "release:source": "node scripts/export-public-source.mjs"
+  },
+  "license": "MIT",
+  "packageManager": "pnpm@12.11.2",
+  "engines": {
+    "node": ">=24.14.0 <25"
+  }
+}

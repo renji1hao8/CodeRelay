@@ -1,0 +1,16 @@
+{
+  "name": "remotecc-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "dependencies": {
+    "@fastify/multipart": "10.1.6",
+    "@fastify/websocket": "11.3.4",
+    "@remote-cc/shared": "file:vendor/shared",
+    "@xterm/addon-serialize": "0.14.0",
+    "@xterm/headless": "6.0.0",
+    "fastify": "5.12.7",
+    "node-pty": "1.1.0"
+  }
+}

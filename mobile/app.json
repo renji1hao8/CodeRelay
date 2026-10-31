@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "RemoteCC",
+    "slug": "remote-cc",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "remotecc",
+    "userInterfaceStyle": "dark",
+    "android": {
+      "package": "dev.remotecc.mobile",
+      "versionCode": 317,
+      "userInterfaceStyle": "dark",
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.POST_NOTIFICATIONS"
+      ],
+      "adaptiveIcon": {
+        "backgroundColor": "#121416",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      }
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-status-bar"
+    ]
+  }
+}

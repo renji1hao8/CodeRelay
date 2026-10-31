@@ -1,0 +1,20 @@
+name: CI
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24.19.0'
+      - run: npx --yes --registry=https://registry.npmjs.org pnpm@12.11.2 install --frozen-lockfile
+      - run: npm --prefix mobile ci
+      - run: npm test
+      - run: node server/node_modules/typescript/bin/tsc --noEmit -p server/tsconfig.json
+      - run: npm --prefix mobile run typecheck
+      - run: npm run audit:public
+      - run: npm --prefix mobile audit --registry=https://registry.npmjs.org --audit-level=low
+      - run: npx --yes --registry=https://registry.npmjs.org pnpm@12.11.2 audit --registry=https://registry.npmjs.org --audit-level=low

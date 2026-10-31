@@ -1,0 +1,5 @@
+example.com {
+    @localOnly path /api/pair/start /api/elevated/request
+    respond @localOnly 404
+    reverse_proxy 127.0.0.1:8787
+}

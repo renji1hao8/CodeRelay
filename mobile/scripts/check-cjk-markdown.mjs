@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import MarkdownIt from 'markdown-it';
+import cjkFriendly from 'markdown-it-cjk-friendly';
+const md=new MarkdownIt({html:false}).use(cjkFriendly);
+assert.match(md.render('**313 已发布，后端已更新。**手机进入设置。'),/<strong>313 已发布，后端已更新。<\/strong>手机进入设置。/);
+assert.match(md.render('普通**“中文”**后续'),/<strong>“中文”<\/strong>/);
+assert.match(md.render('`**literal。**`'),/<code>\*\*literal。\*\*<\/code>/);
+assert.match(md.render('```text\n**代码。**文字\n```'),/\*\*代码。\*\*文字/);
+assert.match(md.render('**未完成'),/\*\*未完成/);
+assert.match(md.render('<codex_delegation>'),/&lt;codex_delegation&gt;/);
+console.log('OK Chinese punctuation emphasis; code spans, fences, incomplete streaming text and HTML isolation retained');

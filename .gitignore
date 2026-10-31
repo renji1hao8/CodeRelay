@@ -1,0 +1,43 @@
+# Dependencies and generated projects
+node_modules/
+mobile/android/
+mobile/modules/*/android/build/
+mobile/modules/*/android/.cxx/
+*.tsbuildinfo
+dist/
+.apk-out/
+build/
+.cache/
+.cxx/
+.gradle/
+.expo/
+mobile/src/generated/
+
+# Runtime data, device tokens, transcripts, logs and local preferences
+server/data/
+.local/
+.codex-remote-attachments/
+.claude/settings.local.json
+deploy/config.local.ps1
+deploy/certs/
+integrations/*.local.json
+mobile/.local/
+artifacts/
+*.log
+.env
+.env.*
+!.env.example
+
+# Signing and credentials
+*.jks
+*.keystore
+*.key
+*.p12
+*.p8
+*.mobileprovision
+
+# Editor / OS temporary files
+.DS_Store
+Thumbs.db
+*.orig
+*.orig.*

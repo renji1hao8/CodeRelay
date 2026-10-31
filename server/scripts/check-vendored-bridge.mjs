@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import crypto from 'node:crypto';
+import path from 'node:path';
+import {pathToFileURL} from 'node:url';
+const server=process.env.REMOTE_CC_TEST_ROOT?path.join(process.env.REMOTE_CC_TEST_ROOT,'server'):path.resolve(import.meta.dirname,'..');
+const directory=path.join(server,'vendor/desktop-bridge');
+const snapshot=JSON.parse(fs.readFileSync(path.join(directory,'UPSTREAM.json')));
+for(const [file,hash]of Object.entries(snapshot.files))assert.equal(crypto.createHash('sha256').update(fs.readFileSync(path.join(directory,file))).digest('hex'),hash,file);
+const {bridge}=await import(pathToFileURL(path.join(server,'src/desktop/native.ts')).href);
+const loaded=await bridge();
+assert.equal(typeof loaded.codex.listCodexChats,'function');assert.equal(typeof loaded.claude.discoverClaudeSessions,'function');assert.equal(typeof loaded.hosts.getCodexHosts,'function');
+console.log('OK vendored adapter hashes, package metadata and cold module loading; no desktop messages sent');

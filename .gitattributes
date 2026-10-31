@@ -1,0 +1,2 @@
+# Vendored snapshots are verified byte for byte; never rewrite their line endings.
+server/vendor/desktop-bridge/lib/*.mjs -text
