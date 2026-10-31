@@ -1,6 +1,6 @@
 {
   "name": "remote-cc",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "scripts": {
     "dev:server": "pnpm --filter @remote-cc/server dev",

@@ -242,7 +242,7 @@ export function SettingsScreen({
       setNotify(notifyStatus());
       return;
     }
-    const ok = await postLocalNotification("远程cc 测试通知", "本地通知是通的", "remotecc://home");
+    const ok = await postLocalNotification("CodeRelay 测试通知", "本地通知是通的", "remotecc://home");
     setNotify(notifyStatus());
     setNotifyNotice(ok ? "已弹出一条本地通知,看通知栏" : "没能弹出(可能被系统拦截)");
   };

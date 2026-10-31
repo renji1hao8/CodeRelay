@@ -8,7 +8,7 @@ const write=(name,text)=>{const file=path.join(root,name);fs.mkdirSync(path.dirn
 const notices=path.resolve(root,'../assets/third-party-notices.txt');
 if(fs.existsSync(notices))write('app/src/main/assets/third-party-notices.txt',fs.readFileSync(notices,'utf8'));
 else if(process.env.REMOTE_CC_PUBLIC_BUILD==='1')throw Error('Generate Android license notices before public build');
-patch('settings.gradle',s=>s.replace(/^rootProject\.name = .*$/m,"rootProject.name = 'remotecc'"));
+patch('settings.gradle',s=>s.replace(/^rootProject\.name = .*$/m,"rootProject.name = 'coderelay'"));
 patch('gradle.properties',s=>s.includes('overridePathCheck')?s:s+'\nandroid.overridePathCheck=true\n');
 if(process.env.REMOTE_CC_BUILD_MIRRORS==='cn'){
  patch('gradle/wrapper/gradle-wrapper.properties',s=>s.replace(/^distributionUrl=.*\/gradle-([\d.]+)-(bin|all)\.zip$/m,(_line,version,kind)=>`distributionUrl=https\\://mirrors.cloud.tencent.com/gradle/gradle-${version}-${kind}.zip`));

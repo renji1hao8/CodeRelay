@@ -1,4 +1,4 @@
-# 发布 1.0.0
+# 发布 1.0.1
 
 公开仓库必须从 `npm run release:source` 的干净导出建立。不要公开开发时的私人仓库；忽略规则不能删除旧提交中的个人配置。
 
@@ -12,9 +12,9 @@
 
 ## 建立公开仓库
 
-只进入生成的 `dist/remotecc-1.0.0/source/` 初始化新 Git 仓库。首次提交必须包含 `.public-source.json`，它标识无私人历史的起点。运行 `node scripts/guard-release.mjs` 验证后，再关联新建的 GitHub 仓库。不要把旧仓库的分支、标签或 `.git` 复制进去。
+只进入生成的 `dist/coderelay-1.0.1/source/` 初始化新 Git 仓库。首次提交必须包含 `.public-source.json`，它标识无私人历史的起点。运行 `node scripts/guard-release.mjs` 验证后，再关联新建的 GitHub 仓库。不要把旧仓库的分支、标签或 `.git` 复制进去。
 
-将发行文件上传为 `v1.0.0` 的草稿 Release，检查文件名、校验值、许可、教程链接与实测范围后再发布。源码包无 `.git`；若另行分享初始化的源码目录，请检查 Git 作者邮箱是否愿意公开。
+将发行文件上传为 `v1.0.1` 的草稿 Release，检查文件名、校验值、许可、教程链接与实测范围后再发布。源码包无 `.git`；若另行分享初始化的源码目录，请检查 Git 作者邮箱是否愿意公开。
 
 ## GitHub Actions
 

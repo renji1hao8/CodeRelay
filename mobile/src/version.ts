@@ -6,5 +6,5 @@
 // ⚠️ 别改成运行时读取。这个文件是构建那刻的快照,跟着 APK 一起被打进包里 ——
 // 换成运行时读会让"我是什么版本"变成一个可能失败、也可能读到旧值的调用。
 
-export const versionName = "1.0.0";
-export const versionCode = 317;
+export const versionName = "1.0.1";
+export const versionCode = 318;

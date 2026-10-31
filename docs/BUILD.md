@@ -2,7 +2,7 @@
 
 后端要求 Node.js 24.14+（24.x）。开发环境需要 pnpm 12.11.2。Android 构建另需 JDK 21、Android SDK 和项目所要求的 SDK/NDK 组件；不要求安装本机专用编译链。
 
-1.0.0 使用 Expo 58 / React Native 0.88.1，Android compile SDK 37、Build Tools 37.0.0、NDK 27.1.12297006、Gradle 9.4.1；最低 Android API 24，target SDK 36。构建脚本保留模板要求的 Gradle 版本，启用镜像时只更换下载源。
+1.0.1 使用 Expo 58 / React Native 0.88.1，Android compile SDK 37、Build Tools 37.0.0、NDK 27.1.12297006、Gradle 9.4.1；最低 Android API 24，target SDK 36。构建脚本保留模板要求的 Gradle 版本，启用镜像时只更换下载源。
 
 ```powershell
 npx --yes pnpm@12.11.2 install --frozen-lockfile

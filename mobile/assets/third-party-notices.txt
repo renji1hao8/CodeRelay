@@ -1,4 +1,4 @@
-RemoteCC Android — Third-party notices
+CodeRelay Android — Third-party notices
 
 Dependencies retain their own licenses.
 

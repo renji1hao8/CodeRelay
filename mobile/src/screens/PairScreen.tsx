@@ -88,7 +88,7 @@ export function PairScreen({
           <View style={styles.logo}>
             <Ionicons name="terminal" size={26} color={theme.color.accent} />
           </View>
-          <Text style={styles.title}>RemoteCC</Text>
+          <Text style={styles.title}>CodeRelay</Text>
           <Text style={styles.subtitle}>在手机上继续电脑里的 Claude 和 Codex 会话</Text>
         </View>
 

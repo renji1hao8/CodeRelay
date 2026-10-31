@@ -192,7 +192,7 @@ class NotifyService : Service() {
         try {
             val json = JSONObject(text)
             if (json.optString("t") != "notify") return
-            val title = json.optString("title").ifBlank { "远程cc" }
+            val title = json.optString("title").ifBlank { "CodeRelay" }
             val body = json.optString("body")
             val link = json.optString("link").takeIf { it.isNotBlank() }
             // kind 决定通知落在哪个 id 区间,好让 App 侧能按类整段取消(审批完清 approval、

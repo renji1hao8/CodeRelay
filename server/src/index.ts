@@ -211,7 +211,7 @@ app.get("/api/push/config", async () => {
 app.post("/api/push/config", async (req) => setPushConfig(req.body as Record<string, never>));
 
 app.post("/api/push/test", async () => {
-  const title = "远程cc 测试通知";
+  const title = "CodeRelay 测试通知";
   const body = "如果你在手机上看到这条,推送通道是通的";
   const link = "remotecc://home";
   // 既走外部推送通道,也走 App 内的后台事件流 —— 这样点一次就能同时验两条路
@@ -332,7 +332,7 @@ function page(h: HealthResponse): string {
   return `<!doctype html>
 <html lang="zh-CN"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>远程cc</title>
+<title>CodeRelay</title>
 <style>
   :root { color-scheme: dark }
   body { margin:0; padding:24px; background:#0b0b0f; color:#e8e8ee;
@@ -349,7 +349,7 @@ function page(h: HealthResponse): string {
              border:1px solid #1d5638; color:#3ddc84; font-size:18px; font-weight:600; margin-bottom:20px }
 </style></head><body>
 <div class="verdict">手机已连通这台 PC ✓</div>
-<h1>远程cc 后端</h1>
+<h1>CodeRelay 后端</h1>
 <div class="sub">${new Date().toLocaleString("zh-CN")} · 请用 App 配对后使用</div>
 
 <div class="card">
@@ -412,7 +412,7 @@ try {
   await app.listen({ port: config.port, host: config.listenHost });
   app.log.info(
     { port: config.port, publicUrl: config.publicUrl || null, local: `http://127.0.0.1:${config.port}` },
-    "远程cc 后端已就绪",
+    "CodeRelay 后端已就绪",
   );
 } catch (err) {
   app.log.error(err);

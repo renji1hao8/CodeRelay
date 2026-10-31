@@ -3,7 +3,7 @@ import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 export const root=path.resolve(import.meta.dirname,'..');
 export const version=JSON.parse(fs.readFileSync(path.join(root,'package.json'))).version;
-export const releaseRoot=path.join(root,'dist',`remotecc-${version}`);
+export const releaseRoot=path.join(root,'dist',`coderelay-${version}`);
 const folders=['docs','integrations','scripts','deploy','release/runtime','server/src','server/scripts','server/vendor','packages/shared','mobile/src','mobile/scripts','mobile/assets','mobile/modules/remote-cc-notify','.github'];
 const files=['README.md','LICENSE','SECURITY.md','CHANGELOG.md','CONTRIBUTING.md','THIRD_PARTY_NOTICES.md','AGENTS.md','CLAUDE.md','.gitignore','.npmrc','.env.example','package.json','pnpm-lock.yaml','pnpm-workspace.yaml','setup.cmd','start.cmd','pair.cmd','doctor.cmd','desktop-control.cmd','server/package.json','server/tsconfig.json','server/CLAUDE.md','mobile/package.json','mobile/package-lock.json','mobile/app.json','mobile/index.ts','mobile/App.tsx','mobile/tsconfig.json','mobile/babel.config.js','mobile/metro.config.js','mobile/.gitignore','mobile/CLAUDE.md'];
 files.push('.gitattributes');

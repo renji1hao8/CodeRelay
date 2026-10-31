@@ -4,7 +4,7 @@
 
 ## 1. 下载并解压
 
-从 [1.0.0 下载页](https://github.com/renji1hao8/RemoteCC/releases/tag/v1.0.0) 下载 Windows ZIP 和 Android APK。把 Windows ZIP 解压到一个固定目录，例如 `C:\Apps\RemoteCC`。请先解压，再运行文件，不要直接在压缩包预览窗口内启动。
+从 [1.0.1 下载页](https://github.com/renji1hao8/CodeRelay/releases/tag/v1.0.1) 下载 Windows ZIP 和 Android APK。把 Windows ZIP 解压到一个固定目录，例如 `C:\Apps\CodeRelay`。请先解压，再运行文件，不要直接在压缩包预览窗口内启动。
 
 Windows 包附后端运行时与依赖。若你下载的是 Source ZIP，先安装 Node.js 24.14+（24.x），再双击 `setup.cmd` 安装依赖。
 
@@ -46,7 +46,7 @@ node scripts/install.mjs
 
 同一 Wi-Fi 模式下，选择电脑 Wi-Fi 网卡的地址，手机填 `http://该地址:8787`。不要填 `127.0.0.1`，那指的是手机自己。Windows 防火墙提示时，只允许你信任的专用网络。
 
-把 APK 传到手机安装，打开 RemoteCC，填写电脑地址、设备名称及六位配对码。配对码五分钟内有效；过期后在电脑上双击 `pair.cmd` 重新生成。
+把 APK 传到手机安装，打开 CodeRelay，填写电脑地址、设备名称及六位配对码。配对码五分钟内有效；过期后在电脑上双击 `pair.cmd` 重新生成。
 
 ## 5. 使用
 
@@ -69,4 +69,8 @@ node scripts/install.mjs
 
 ## 从旧测试包迁移
 
-1.0.0 公开 APK 使用独立的正式签名。如果旧测试包签名不同，Android 会拒绝覆盖安装。先保存手机尚未发送的草稿，卸载旧测试包，再安装公开 APK 并重新配对。电脑上的会话历史不会因卸载手机 App 被删除。
+从正式签名的 RemoteCC 1.0.0 升级到 CodeRelay 1.0.1，可直接覆盖安装，已有配对信息继续保留。
+
+电脑端覆盖升级时，先结束旧后端和它的终端任务，再将 Windows ZIP 解压到原安装目录，保留 `server/data/` 与 `deploy/config.local.ps1`。如果换目录，先备份并迁移这两项；不要同时运行两套后端。
+
+1.0.1 公开 APK 使用独立的正式签名。如果旧测试包签名不同，Android 会拒绝覆盖安装。先保存手机尚未发送的草稿，卸载旧测试包，再安装公开 APK 并重新配对。电脑上的会话历史不会因卸载手机 App 被删除。

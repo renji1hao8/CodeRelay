@@ -69,7 +69,7 @@ export function AboutSection({ api }: { api: Api }) {
     try {
       const out = await downloadUrlAndOpen(
         api.appApkUrl(),
-        `remotecc-${offer.versionName}-${offer.versionCode}.apk`,
+        `coderelay-${offer.versionName}-${offer.versionCode}.apk`,
         setProgress,
       );
       setNotice(

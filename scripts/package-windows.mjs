@@ -17,10 +17,10 @@ copy('server/src');copy('server/vendor');copy('server/scripts/show-pair-info.mjs
 const shared=path.join(destination,'server/vendor/shared');
 for(const file of fs.readdirSync(path.join(shared,'src')).filter(f=>f.endsWith('.ts'))){const input=fs.readFileSync(path.join(shared,'src',file),'utf8');fs.writeFileSync(path.join(shared,'src',file.replace(/\.ts$/,'.js')),stripTypeScriptTypes(input).replace(/(from\s+["'][^"']+)\.ts(["'])/g,'$1.js$2'));}
 const sharedPackage=JSON.parse(fs.readFileSync(path.join(shared,'package.json')));sharedPackage.main='./src/index.js';sharedPackage.exports={'.':'./src/index.js'};fs.writeFileSync(path.join(shared,'package.json'),JSON.stringify(sharedPackage,null,2)+'\n');
-const source=JSON.parse(fs.readFileSync(path.join(root,'server/package.json')));
-const deps={};for(const name of Object.keys(source.dependencies))deps[name]=name==='@remote-cc/shared'?'file:vendor/shared':JSON.parse(fs.readFileSync(path.join(root,'server/node_modules',name,'package.json'))).version;
 const locked=path.join(root,'release/runtime');
 const hasLock=fs.existsSync(path.join(locked,'package-lock.json'))&&!process.argv.includes('--refresh-lock');
+const source=JSON.parse(fs.readFileSync(path.join(root,'server/package.json')));
+const deps={};if(!hasLock)for(const name of Object.keys(source.dependencies))deps[name]=name==='@remote-cc/shared'?'file:vendor/shared':JSON.parse(fs.readFileSync(path.join(root,'server/node_modules',name,'package.json'))).version;
 const manifest=hasLock?JSON.parse(fs.readFileSync(path.join(locked,'package.json'))):{name:'remotecc-runtime',version,private:true,type:'module',license:'MIT',dependencies:deps};
 if(manifest.version!==version)throw Error('Refresh the runtime lock after changing the release version');
 fs.writeFileSync(path.join(destination,'server/package.json'),JSON.stringify(manifest,null,2)+'\n');

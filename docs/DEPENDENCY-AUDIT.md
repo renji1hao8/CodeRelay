@@ -1,4 +1,4 @@
-# 1.0.0 依赖审计记录
+# 1.0.1 依赖审计记录
 
 正式发行前已将手机框架升级至 Expo 58.0.22、React Native 0.88.1、React 19.3.0，并按 Expo 版本表同步图片、文件、键盘、WebView 和动画组件。
 
@@ -18,7 +18,7 @@ Expo 58 的部分构建依赖仍限制使用旧 glob/minimatch，因此在 `mobi
 
 ```powershell
 npm --prefix mobile audit --registry=https://registry.npmjs.org
-npm audit --prefix dist/remotecc-1.0.0/windows/server --omit=dev --registry=https://registry.npmjs.org
+npm audit --prefix dist/coderelay-1.0.1/windows/server --omit=dev --registry=https://registry.npmjs.org
 ```
 
 可选 Claude Agent SDK 不包含在默认 Windows 生产依赖中；需要该旧 CLI 功能时，另行安装并遵守其使用条件。

@@ -170,7 +170,7 @@ const WRAPPER = [
   "[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)",
   "$LASTEXITCODE = 0",
   "try { & ([scriptblock]::Create($env:RC_CMD)) 6>&1 3>&1 2>&1 }",
-  "catch { Write-Output ('[远程cc] 命令没能开始:' + $_.Exception.Message) }",
+  "catch { Write-Output ('[CodeRelay] 命令没能开始:' + $_.Exception.Message) }",
   "exit $LASTEXITCODE",
 ].join("\n");
 

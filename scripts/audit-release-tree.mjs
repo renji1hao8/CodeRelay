@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-const target=path.resolve(process.argv[2]||'dist/remotecc-1.0.0/source');
+import {releaseRoot} from './export-public-source.mjs';
+const target=path.resolve(process.argv[2]||path.join(releaseRoot,'source'));
 let files=0;
 function walk(folder){for(const e of fs.readdirSync(folder,{withFileTypes:true})){const absolute=path.join(folder,e.name),relative=path.relative(target,absolute).replaceAll('\\','/');
  if(e.isSymbolicLink())throw Error('Release contains a symlink: '+relative);

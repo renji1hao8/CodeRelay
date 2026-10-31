@@ -1,5 +1,7 @@
 # 配置
 
+CodeRelay 沿用 `REMOTE_CC_` 环境变量前缀和原连接标识，已有配置可以继续使用。
+
 源代码运行可在项目根 `.env` 中设置变量，通过 `npm start` 加载；Windows 启动脚本读取 `deploy/config.local.ps1`。两种方式不要给同一项设置冲突值。
 
 | 环境变量 | 默认值与作用 |

@@ -1,21 +1,23 @@
-# RemoteCC
+# CodeRelay
 
 在 Android 手机上继续电脑里的 Claude Code 和 Codex 桌面会话。
 
-[下载 1.0.0](https://github.com/renji1hao8/RemoteCC/releases/tag/v1.0.0) · [首次安装教程](docs/QUICKSTART.zh-CN.md) · [反馈问题](https://github.com/renji1hao8/RemoteCC/issues)
+[下载 1.0.1](https://github.com/renji1hao8/CodeRelay/releases/tag/v1.0.1) · [首次安装教程](docs/QUICKSTART.zh-CN.md) · [反馈问题](https://github.com/renji1hao8/CodeRelay/issues)
 
-RemoteCC 由 Android App 和 Windows 后端组成。消息投递到电脑原会话，手机与电脑共用同一份历史。桌面同步模式不会另外启动 CLI 续接会话。
+CodeRelay 由 Android App 和 Windows 后端组成。消息投递到电脑原会话，手机与电脑共用同一份历史。桌面同步模式不会另外启动 CLI 续接会话。
+
+项目曾用名 RemoteCC。1.0.1 为改名补丁，已有同签名的 1.0.0 安装可直接升级，配对和电脑历史继续保留。
 
 ## 安装
 
-从 [1.0.0 Releases](https://github.com/renji1hao8/RemoteCC/releases/tag/v1.0.0) 下载：
+从 [1.0.1 Releases](https://github.com/renji1hao8/CodeRelay/releases/tag/v1.0.1) 下载：
 
 | 文件 | 用途 |
 | --- | --- |
-| [RemoteCC-1.0.0-Windows.zip](https://github.com/renji1hao8/RemoteCC/releases/download/v1.0.0/RemoteCC-1.0.0-Windows.zip) | 电脑后端，附运行时与生产依赖 |
-| [RemoteCC-1.0.0-Android.apk](https://github.com/renji1hao8/RemoteCC/releases/download/v1.0.0/RemoteCC-1.0.0-Android.apk) | 手机安装包 |
-| [RemoteCC-1.0.0-Source.zip](https://github.com/renji1hao8/RemoteCC/releases/download/v1.0.0/RemoteCC-1.0.0-Source.zip) | 脱敏源码，供修改与自行构建 |
-| `RemoteCC-1.0.0-Android-Notices.txt` | Android 包内第三方许可的文本副本 |
+| [CodeRelay-1.0.1-Windows.zip](https://github.com/renji1hao8/CodeRelay/releases/download/v1.0.1/CodeRelay-1.0.1-Windows.zip) | 电脑后端，附运行时与生产依赖 |
+| [CodeRelay-1.0.1-Android.apk](https://github.com/renji1hao8/CodeRelay/releases/download/v1.0.1/CodeRelay-1.0.1-Android.apk) | 手机安装包 |
+| [CodeRelay-1.0.1-Source.zip](https://github.com/renji1hao8/CodeRelay/releases/download/v1.0.1/CodeRelay-1.0.1-Source.zip) | 脱敏源码，供修改与自行构建 |
+| `CodeRelay-1.0.1-Android-Notices.txt` | Android 包内第三方许可的文本副本 |
 | `SHA256SUMS.txt` | 下载校验值 |
 
 1. 在 Windows 11 电脑上解压后端包。首次运行 `setup.cmd`，选择连接方式和允许手机浏览的项目目录。
@@ -60,11 +62,11 @@ npm run typecheck
 npm --prefix mobile run typecheck
 ```
 
-[架构](docs/ARCHITECTURE.md) · [Android 构建](docs/BUILD.md) · [1.0.0 发布流程](docs/RELEASING.md) · [更新记录](CHANGELOG.md)
+[架构](docs/ARCHITECTURE.md) · [Android 构建](docs/BUILD.md) · [1.0.1 发布流程](docs/RELEASING.md) · [更新记录](CHANGELOG.md)
 
 ## 支持范围
 
-1.0.0 面向 Windows 11 电脑和 Android 手机。macOS、Linux 后端及 iOS 尚未验收。原生桌面接口随应用升级可能变化；兼容性记录与实测范围见 [兼容性](docs/COMPATIBILITY.md)。
+1.0.1 面向 Windows 11 电脑和 Android 手机。macOS、Linux 后端及 iOS 尚未验收。原生桌面接口随应用升级可能变化；兼容性记录与实测范围见 [兼容性](docs/COMPATIBILITY.md)。
 
 原项目中的个人网络入口、目录、证书、诊断记录和运行数据不随公开包分发。个人工作流的通用示例放在 `integrations/`，默认关闭。
 

@@ -1,15 +1,15 @@
 {
   "expo": {
-    "name": "RemoteCC",
-    "slug": "remote-cc",
-    "version": "1.0.0",
+    "name": "CodeRelay",
+    "slug": "code-relay",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "remotecc",
     "userInterfaceStyle": "dark",
     "android": {
       "package": "dev.remotecc.mobile",
-      "versionCode": 317,
+      "versionCode": 318,
       "userInterfaceStyle": "dark",
       "predictiveBackGestureEnabled": false,
       "permissions": [

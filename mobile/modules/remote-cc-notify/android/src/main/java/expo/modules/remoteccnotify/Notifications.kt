@@ -159,7 +159,7 @@ internal object Notifications {
     fun buildServiceNotification(context: Context): Notification {
         val builder = NotificationCompat.Builder(context, CHANNEL_SERVICE)
             .setSmallIcon(smallIcon(context))
-            .setContentTitle("远程cc 正在保持连接")
+            .setContentTitle("CodeRelay 正在保持连接")
             .setContentText("任务完成或需要你批准时会通知你")
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setOngoing(true)

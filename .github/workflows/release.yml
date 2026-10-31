@@ -45,10 +45,10 @@ jobs:
       - run: node scripts/assemble-release.mjs
       - uses: actions/upload-artifact@v7.0.2
         with:
-          name: RemoteCC-1.0.0
+          name: CodeRelay-1.0.1
           path: |
-            dist/remotecc-1.0.0/*.zip
-            dist/remotecc-1.0.0/*.apk
-            dist/remotecc-1.0.0/*-Notices.txt
-            dist/remotecc-1.0.0/SHA256SUMS.txt
+            dist/coderelay-1.0.1/*.zip
+            dist/coderelay-1.0.1/*.apk
+            dist/coderelay-1.0.1/*-Notices.txt
+            dist/coderelay-1.0.1/SHA256SUMS.txt
           if-no-files-found: error

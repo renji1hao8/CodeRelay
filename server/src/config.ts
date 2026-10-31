@@ -15,7 +15,7 @@ function roots() {
   return rootsCache.value;
 }
 export const config = {
-  version: "1.0.0",
+  version: "1.0.1",
   port: Number(process.env.REMOTE_CC_PORT || 8787),
   listenHost: process.env.REMOTE_CC_LISTEN_HOST || "127.0.0.1",
   dataDir, listDir,

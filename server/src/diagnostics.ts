@@ -131,7 +131,7 @@ export async function buildDiagnostics(): Promise<string> {
   const logsDir = path.join(config.dataDir, "logs");
 
   const parts: string[] = [
-    "远程cc 诊断包",
+    "CodeRelay 诊断包",
     `生成时间 ${new Date().toISOString()}`,
     "本文件已脱敏:配对密码、frp token、设备 token 都不会出现在里面。",
   ];

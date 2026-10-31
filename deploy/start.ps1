@@ -11,5 +11,5 @@ if(-not $ready){
  for($i=0;$i -lt 30;$i++){Start-Sleep -Milliseconds 500;try{$ready=Invoke-RestMethod $health -TimeoutSec 1;break}catch{};if($process.HasExited){throw "Backend exited. Read $LogDir\server.err.log"}}
  if(-not $ready){throw "Backend did not start. Read $LogDir\server.err.log"}
 }
-Write-Host ("RemoteCC "+$ready.version+" is running. Closing this window does not stop the backend.")
+Write-Host ("CodeRelay "+$ready.version+" is running. Closing this window does not stop the backend.")
 if(-not $NoPair){& $NodeExe (Join-Path $ServerDir 'scripts\show-pair-info.mjs')}
