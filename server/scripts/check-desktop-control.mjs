@@ -78,6 +78,44 @@ await test('Codex 原生审批保留 requestId 类型且不串会话', async () 
   codex.emit({ type: 'mcp-notification', hostId: 'local', method: 'serverRequest/resolved', params: { requestId: 7 } });
   await assert.rejects(codex.relay.action('thread-A', { type: 'approval', requestId: '7', decision: 'allow' }));
 });
+const appRequest = (id, patch={}) => ({ id, method:'mcpServer/elicitation/request', params:{threadId:'thread-A',turnId:'turn-A',mode:'form',serverName:'codex_apps',message:'访问桌面应用',requestedSchema:{type:'object',properties:{}},_meta:{codex_approval_kind:'mcp_tool_call',connector_id:'computer-use',tool_name:'get_window_state',tool_params:{app:'Example App'}},...patch} });
+await test('应用访问审批能显示且按原生 action 回应，不授予永久权限', async () => {
+ const request=appRequest('app-access');codex.emit({type:'mcp-request',hostId:'local',request});
+ const card=(await codex.relay.snapshot('thread-A')).approvals.find(r=>r.id==='app-access');
+ assert.equal(card.canAllow,true);assert.match(card.description,/Example App/);assert.equal(card.tool,'应用访问');
+ assert.equal((await codex.relay.snapshot('thread-B')).approvals.some(r=>r.id==='app-access'),false);
+ await codex.relay.action('thread-A',{type:'approval',requestId:'app-access',decision:'allow'});
+ const response=sent.at(-1);assert.equal(response.response.id,'app-access');assert.equal(response.threadId,'thread-A');assert.equal(response.requestMethod,'mcpServer/elicitation/request');
+ assert.deepEqual(JSON.parse(JSON.stringify(response.response.result)),{action:'accept'});
+ codex.emit({type:'mcp-notification',hostId:'local',method:'serverRequest/resolved',params:{requestId:'app-access'}});
+ assert.equal((await codex.relay.snapshot('thread-A')).approvals.some(r=>r.id==='app-access'),false);
+});
+await test('应用访问审批可在没有 turnId 时按真实 threadId 归属，其他宿主与旧轮次被隔离', async()=>{
+ codex.emit({type:'mcp-request',hostId:'remote',request:appRequest('remote')});
+ codex.emit({type:'mcp-request',hostId:'local',request:appRequest('old-turn',{turnId:'old'})});
+ codex.emit({type:'mcp-request',hostId:'local',request:appRequest('without-turn',{turnId:undefined})});
+ const approvals=(await codex.relay.snapshot('thread-A')).approvals;
+ assert.equal(approvals.some(r=>r.id==='remote'||r.id==='old-turn'),false);assert.equal(approvals.some(r=>r.id==='without-turn'),true);
+});
+await test('身份验证、表单及不支持的连接器只显示提示，不能冒充普通允许按钮',async()=>{
+ const protectedRequests=[appRequest('verification',{mode:'openai/userVerification',challenge:'must-not-leak'}),appRequest('form',{requestedSchema:{type:'object',properties:{approved:{type:'boolean'}},required:['approved']}}),appRequest('oauth',{_meta:{codex_approval_kind:'mcp_tool_call',connector_id:'other',tool_name:'sign_in',tool_params:{app:'Other'}}}),appRequest('protected',{requiresUserInteraction:true})];
+ for(const request of protectedRequests){
+  codex.emit({type:'mcp-request',hostId:'local',request});
+  const card=(await codex.relay.snapshot('thread-A')).approvals.find(r=>r.id===request.id);assert.equal(card.canAllow,false);assert.equal(JSON.stringify(card).includes('must-not-leak'),false);
+  const count=sent.length;await assert.rejects(codex.relay.action('thread-A',{type:'approval',requestId:request.id,decision:'allow'}));
+  // snapshot reads are permitted; an approval response must not be emitted.
+  assert.equal(sent.slice(count).some(r=>r.type==='mcp-response'),false);
+ }
+ await codex.relay.action('thread-A',{type:'approval',requestId:'form',decision:'deny'});
+ assert.deepEqual(JSON.parse(JSON.stringify(sent.at(-1).response.result)),{action:'decline'});
+});
+await test('额外权限申请不会漏掉，未适配的允许操作留在电脑，拒绝使用原生空权限响应',async()=>{
+ codex.emit({type:'mcp-request',hostId:'local',request:{id:'permissions',method:'item/permissions/requestApproval',params:{threadId:'thread-A',turnId:'turn-A',permissions:{network:{enabled:true}},reason:'需要额外网络权限'}}});
+ const card=(await codex.relay.snapshot('thread-A')).approvals.find(r=>r.id==='permissions');assert.equal(card.canAllow,false);assert.match(card.description,/网络/);
+ await assert.rejects(codex.relay.action('thread-A',{type:'approval',requestId:'permissions',decision:'allow'}));
+ await codex.relay.action('thread-A',{type:'approval',requestId:'permissions',decision:'deny'});
+ assert.deepEqual(JSON.parse(JSON.stringify(sent.at(-1).response.result)),{permissions:{},scope:'turn'});
+});
 await test('重复加载控制层不重复监听', async () => {
   vm.runInContext(source, claude.context); assert.equal(events.length, 1);
 });

@@ -1,6 +1,6 @@
 /* Runs only in the verified desktop renderer. No caller-supplied code or methods. */
 (() => {
-  if (globalThis.__remoteccControl?.version === 1) return;
+  if (globalThis.__remoteccControl?.version === 2) return;
   const approvals = new Map(), replies = new Map(), taskSets = new Map(), initialReads = new Map(), submitted = new Map();
   const claude = globalThis['claude.web']?.LocalSessions;
   const electron = globalThis.electronBridge;
@@ -8,6 +8,29 @@
   const fail = message => { throw new Error(message); };
   const capped = map => { while (map.size > 100) map.delete(map.keys().next().value); };
   const key = id => String(id);
+  const codexApprovalMethods = new Set(['item/commandExecution/requestApproval', 'item/fileChange/requestApproval', 'item/permissions/requestApproval', 'mcpServer/elicitation/request']);
+  const codexApproval = request => {
+    const p = request.params || {};
+    if (request.method === 'mcpServer/elicitation/request') {
+      const meta = p._meta || {};
+      const connector = String(meta.connector_id || '').trim().toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).join('-');
+      // Only the native Computer Use boolean approval is delegatable here.
+      // Auth, user-verification, arbitrary forms and execution-bound approvals
+      // stay on Desktop; never synthesize form answers or persistent grants.
+      const schema = p.requestedSchema;
+      const app = meta.tool_params?.app;
+      const canAllow = p.mode === 'form' && meta.codex_approval_kind === 'mcp_tool_call' &&
+        (connector === 'computer-use' || connector.startsWith('computer-use-')) &&
+        typeof meta.tool_name === 'string' && typeof app === 'string' && !!app.trim() &&
+        schema?.type === 'object' && schema.properties && Object.keys(schema.properties).length === 0 &&
+        (!schema.required || schema.required.length === 0) && !meta.approveDisabled && !meta.executionBound &&
+        !p.requiresUserInteraction && !p.onlyOnCard && !p.approveDisabled && !p.executionBound && !meta.requiresUserInteraction;
+      return { id: key(request.id), tool: '应用访问', description: canAllow ? `允许本次操作 ${app}？${p.message ? '\n' + p.message : ''}` : '此确认需要在电脑上处理',
+        input: canAllow ? { app, tool: meta.tool_name, parameters: meta.tool_params } : { mode: p.mode, server: p.serverName }, canAllow };
+    }
+    if (request.method === 'item/permissions/requestApproval') return { id: key(request.id), tool: '权限申请', description: p.reason || '此权限申请需要在电脑上处理', input: p.permissions, canAllow: false };
+    return { id: key(request.id), tool: request.method === 'item/commandExecution/requestApproval' ? 'Bash' : 'Edit', description: p.reason || '', input: p, canAllow: true };
+  };
   const acceptTaskEvent = (sessionId, message) => {
     if (!message) return;
     let state = taskSets.get(sessionId);
@@ -51,7 +74,7 @@
       if (waiter) { replies.delete(key(data.message.id)); clearTimeout(waiter.timer); data.message.error ? waiter.reject(new Error('电脑未能完成操作')) : waiter.resolve(data.message.result); }
     } else if (data.type === 'mcp-request') {
       const r = data.request;
-      if (r?.method === 'item/commandExecution/requestApproval' || r?.method === 'item/fileChange/requestApproval') {
+      if (codexApprovalMethods.has(r?.method) && ['string', 'number'].includes(typeof r.id) && typeof r.params?.threadId === 'string') {
         approvals.set(key(r.id), r); capped(approvals);
       }
     } else if (data.type === 'mcp-notification') {
@@ -98,7 +121,7 @@
     if (!Array.isArray(raw?.data)) fail('电脑会话状态暂不可用');
     const turn = raw.data.find(t => t.status === 'inProgress');
     return { connected: true, canInterrupt: !!turn, turnKey: turn?.id ?? null, tasks: [], tasksKnown: true,
-      approvals: [...approvals.values()].filter(r => r.params?.threadId === id && r.params?.turnId === turn?.id).map(r => ({ id: key(r.id), tool: r.method.includes('commandExecution') ? 'Bash' : 'Edit', description: r.params.reason || '', input: r.params, canAllow: true })),
+      approvals: [...approvals.values()].filter(r => r.params?.threadId === id && (!r.params.turnId || r.params.turnId === turn?.id)).map(codexApproval),
       notice: '审批会在电脑连接期间自动同步' };
   }
   const snapshot = id => claude ? claudeState(id) : codexState(id);
@@ -107,7 +130,7 @@
     if (submitted.has(k)) fail('操作已提交，请等待电脑更新状态');
     submitted.set(k, true); capped(submitted);
   };
-  globalThis.__remoteccControl = { version: 1, snapshot, async action(id, action) {
+  globalThis.__remoteccControl = { version: 2, snapshot, async action(id, action) {
     const state = await snapshot(id);
     if (action.type === 'interrupt') {
       if (!state.canInterrupt || state.turnKey !== action.turnKey) fail('这一轮已经结束，请刷新会话');
@@ -131,7 +154,9 @@
       else {
         const request = approvals.get(action.requestId);
         if (!request) fail('审批已失效');
-        await electron.sendMessageFromView({ type: 'mcp-response', hostId: 'local', threadId: id, response: { id: request.id, result: { decision: action.decision === 'allow' ? 'accept' : 'decline' } } });
+        const result = request.method === 'mcpServer/elicitation/request' ? { action: action.decision === 'allow' ? 'accept' : 'decline' } :
+          request.method === 'item/permissions/requestApproval' ? { permissions: {}, scope: 'turn' } : { decision: action.decision === 'allow' ? 'accept' : 'decline' };
+        await electron.sendMessageFromView({ type: 'mcp-response', hostId: 'local', threadId: id, requestMethod: request.method, response: { id: request.id, result } });
       }
       return { status: 'submitted', notice: '已提交审批，等待电脑确认' };
     }

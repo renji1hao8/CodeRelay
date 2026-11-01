@@ -65,6 +65,7 @@ export function DesktopControls({ api, provider, id, onChanged }: { api: Api; pr
       {control?.canInterrupt && control.turnKey ? <Btn label={submitted.current.has(control.turnKey) ? "正在停止" : "停止回复"} kind="danger" small disabled={busy || submitted.current.has(control.turnKey)} onPress={() => void act({ type: "interrupt", turnKey: control.turnKey! })} /> : null}
     </View>
     {approvals.length ? <Pressable style={s.banner} onPress={() => setOpen(true)}><Text style={s.bannerText}>有 {approvals.length} 项操作等待你批准 · 点击处理</Text></Pressable> : null}
+    {control && !control.connected ? <Text style={s.hint}>电脑控制未连接，审批暂不能同步。请用“{provider} 手机控制”快捷方式重开桌面端。</Text> : null}
     {notice && !open ? <Text style={s.hint}>{notice}</Text> : null}
     <Sheet visible={open} title="会话控制" onClose={() => { setOpen(false); setOutput(null); }}>
       <ScrollView style={s.scroll} contentContainerStyle={s.stack} nestedScrollEnabled>
