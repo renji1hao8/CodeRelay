@@ -102,16 +102,13 @@ export async function codexTool(name: string, args: unknown) {
 }
 
 export async function sendNative(provider: "claude" | "codex", id: string, message: string, requestId: string) {
+  // Claude's peer inbox is consumed by the running agent and has no model ACK.
+  // Mobile continuation must use LocalSessions.sendMessage, including when idle.
+  if (provider === "claude") throw new Error("Claude 手机续接必须使用桌面输入接口");
   const b = await bridge();
-  if (provider === "claude") {
-    const target = b.claude.resolveClaudeSession(id);
-    // Existing native inbox honours inbound policy. Written is not a model ACK.
-    await b.claude.sendToClaude({ ...target, sessionId: id, message, senderName: "手机端" });
-  } else {
-    const { host } = await codexEndpoint();
-    await b.codex.sendToCodex({ pipePath: host.pipePath, contextThreadId: host.threadId,
-      threadId: id, message, callId: requestId, turnId: requestId });
-  }
+  const { host } = await codexEndpoint();
+  await b.codex.sendToCodex({ pipePath: host.pipePath, contextThreadId: host.threadId,
+    threadId: id, message, callId: requestId, turnId: requestId });
 }
 
 export async function assertNoClaudeDesktopWriter(id: string) {

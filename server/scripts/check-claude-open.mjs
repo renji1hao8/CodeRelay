@@ -1,11 +1,12 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
-import {claudeWriterConflict} from '../src/desktop/claude-sessions.ts';
+import {claudeWriterConflict,claudeDesktopBinding} from '../src/desktop/claude-sessions.ts';
+import {sendNative} from '../src/desktop/native.ts';
 const source=fs.readFileSync(new URL('../src/desktop/claude-activation.js',import.meta.url),'utf8');
 const identity={id:'original',cwd:'E:\\Project',modifiedAt:100,uuids:['a','b']};
 function fixture({existing=[],rows=[{handle:'opaque',cwd:'E:\\Project',lastActivityAt:100}],resumable=true,transcript=[{uuid:'a'},{uuid:'b'}]}={}){
- const calls=[];const api={getAll:async()=>existing,getSession:async id=>({sessionId:id,cwd:identity.cwd}),getTranscriptTail:async()=>({messages:transcript}),
+ const calls=[];const api={getAll:async()=>existing,getSession:async id=>({sessionId:id,cwd:identity.cwd,status:'idle'}),getTranscriptTail:async()=>({messages:transcript}),
  listResumableCliSessions:async()=>rows,readCliTranscript:async()=>({messages:transcript,totalMessages:2}),previewCliResume:async()=>({resumable,reason:'untrusted'}),
  resumeCliSession:async handle=>{calls.push(['resume',handle]);return {ok:true,sessionId:'local_original'};},warmSession:async id=>calls.push(['warm',id]),sendMessage:async(...args)=>calls.push(['send',...args])};
  const ctx={'claude.web':{LocalSessions:api},Map,Set};vm.runInNewContext(source,ctx);return {api,remote:ctx.__remoteccClaudeActivation,calls};
@@ -27,4 +28,31 @@ const forks=fixture({existing:[{sessionId:'local_fork',cwd:identity.cwd}]});asse
 await assert.rejects(forks.remote.send('local_fork',identity,'no','id'),/标识与原历史不一致/);
 assert.equal(claudeWriterConflict('original',[{sessionId:'original',entrypoint:'cli'}]),true);
 assert.equal(claudeWriterConflict('original',[{sessionId:'other',hostSessionId:'host',entrypoint:'claude-desktop'}],'host'),true);
-console.log('OK exact transcript binding, single resume under concurrency, existing host reuse, trust refusal and writer conflicts');
+{
+ const hostId='local_00000000-0000-4000-8000-000000000001';
+ const record={sessionId:'original',hostSessionId:hostId,cwd:identity.cwd,pid:123,procStart:'start-a',pidDomain:'windows',entrypoint:'claude-desktop-3p'};
+ const binding=claudeDesktopBinding('original',[record],()=>record);
+ assert.equal(binding.hostSessionId,hostId);
+ const f=fixture();
+ await f.remote.verify(hostId,identity,binding.hostSessionId);
+ assert.equal(f.calls.length,0,'preflight must not send or wake an agent');
+ await f.remote.send(hostId,identity,'start while idle','message-id',binding.hostSessionId);
+ assert.equal(f.calls.length,1);assert.equal(f.calls[0][0],'send');assert.equal(f.calls[0][1],hostId);
+ await assert.rejects(f.remote.send('local_fork',identity,'wrong host','id',hostId),/标识/);
+ assert.throws(()=>claudeDesktopBinding('original',[record,{...record,sessionId:'other'}],()=>record),/唯一核实/);
+ assert.throws(()=>claudeDesktopBinding('original',[record,record],()=>record),/唯一核实/);
+ assert.throws(()=>claudeDesktopBinding('original',[{...record,entrypoint:'cli'}],()=>record),/唯一核实/);
+ assert.throws(()=>claudeDesktopBinding('original',[record],()=>({...record,sessionId:'other'})),/归属已变化/);
+ assert.throws(()=>claudeDesktopBinding('original',[record],()=>({...record,hostSessionId:'local_fork'})),/归属已变化/);
+ assert.throws(()=>claudeDesktopBinding('original',[record],()=>{throw new Error('process identity mismatch');}),/identity mismatch/);
+ const wrongHistory=fixture({transcript:[{uuid:'fork-a'},{uuid:'fork-b'}]});
+ await assert.rejects(wrongHistory.remote.send(hostId,identity,'wrong history','id',hostId),/原始历史/);
+ assert.equal(wrongHistory.calls.length,0);
+ const wrongDirectory=fixture();wrongDirectory.api.getSession=async()=>({sessionId:hostId,cwd:'E:/other'});
+ await assert.rejects(wrongDirectory.remote.send(hostId,identity,'wrong directory','id',hostId),/归属已变化/);
+ assert.equal(wrongDirectory.calls.length,0);
+ f.api.sendMessage=async()=>{throw new Error('undelivered');};
+ await assert.rejects(f.remote.send(hostId,identity,'rejected','id',hostId),/undelivered/);
+}
+await assert.rejects(sendNative('claude','original','must not enqueue','request-id'),/桌面输入接口/);
+console.log('OK idle desktop sends, registry-authorized live host binding, no inbox fallback, transcript/directory guards, native rejection and single resume');

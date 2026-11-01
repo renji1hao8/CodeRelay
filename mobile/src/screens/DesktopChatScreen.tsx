@@ -214,7 +214,7 @@ export function DesktopChatScreen({ api, initial, onBack }: { api: Api; initial:
       {jump ? <Pressable style={styles.jump} onPress={() => { atBottom.current = true; setJump(false); list.current?.scrollToEnd({ animated: true }); }}><Text style={styles.jumpText}>↓</Text></Pressable> : null}
     </View>
     {receipt ? <Text style={styles.hint}>{receipt}</Text> : null}
-    {pending ? <View style={styles.pending}><Text style={styles.sub}>{pending.status === "sending" ? "正在投递…" : pending.status === "submitted" ? "已送到桌面，正在同步记录" : "投递结果待核实"}</Text>
+    {pending ? <View style={styles.pending}><Text style={styles.sub}>{pending.status === "sending" ? "正在投递…" : pending.status === "submitted" ? "已提交，等待会话记录确认" : "投递结果待核实"}</Text>
       <View style={styles.actions}><Btn label={checking ? "正在核实…" : "核实投递"} onPress={() => void verifyDelivery()} disabled={posting || checking} small />
         {pending.status === "unknown" ? <Btn label="取回草稿" onPress={() => { setDraft(pending.text); setPending(null); }} disabled={posting || checking} small /> : null}</View>
     </View> : null}

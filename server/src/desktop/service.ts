@@ -7,7 +7,7 @@ import { activeSessionForCcId } from "../cc/registry.ts";
 import { httpError } from "../http.ts";
 import { createDeliveryTable, deliverOnce } from "./delivery.ts";
 import { claudeDesktopPage, claudeWriterConflict } from "./claude-sessions.ts";
-import { hasOpenedClaude, openedClaudeHost, openClaude, sendOpenedClaude } from "./claude-open.ts";
+import { hasOpenedClaude, openedClaudeHost, openClaude, prepareClaudeSend } from "./claude-open.ts";
 import { codexLive } from "./codex-live.ts";
 
 const listCache = new Map<string, { at: number; value: DesktopSessionPage }>();
@@ -96,16 +96,8 @@ export async function desktopSend(provider: DesktopProvider, id: string, text: s
     return deliverOnce(db, { requestId, deviceId, target, text }, async () => { throw new Error("already recorded"); });
   }
   if (provider === "claude" && activeSessionForCcId(id)) throw httpError(409, "这条会话仍由独立 CLI 占用，请先结束独立运行再连接桌面");
-  if (provider === "claude") {
-    const b = await bridge();
-    const registrations = b.claude.discoverClaudeSessions();
-    const live = registrations.filter((s: any) => s.sessionId === id && s.entrypoint.startsWith("claude-desktop"));
-    if (claudeWriterConflict(id, registrations, openedClaudeHost(id)) || !live.length && !hasOpenedClaude(id)) throw httpError(409, "请先打开这条桌面会话并关闭重复实例；消息未发送");
-  }
-  const result = await deliverOnce(db, { requestId, deviceId, target, text }, async () => {
-    if (provider === "claude" && hasOpenedClaude(id)) await sendOpenedClaude(id, text);
-    else await sendNative(provider, id, text, requestId);
-  });
+  const send = provider === "claude" ? await prepareClaudeSend(id, text) : () => sendNative("codex", id, text, requestId);
+  const result = await deliverOnce(db, { requestId, deviceId, target, text }, send);
   listCache.clear(); details.clear();
   return result;
 }

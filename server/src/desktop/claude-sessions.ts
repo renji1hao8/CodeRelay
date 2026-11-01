@@ -2,6 +2,18 @@ import type { DesktopSessionPage, DesktopSession } from "@remote-cc/shared";
 
 type Stored = { id: string; title?: string | null; last_prompt?: string | null; project_path?: string | null; updated_at?: string | null };
 type Live = { sessionId: string; hostSessionId?: string; name?: string; cwd?: string; status?: string; entrypoint: string };
+export type ClaudeDesktopBinding = { sessionId: string; hostSessionId: string; cwd: string; pid: number; procStart: string; pidDomain: string; entrypoint: string };
+
+/** The native registry/process check, never shared transcript text, authorizes a live host. */
+export function claudeDesktopBinding(id: string, registrations: Live[], resolve: (id: string) => any): ClaudeDesktopBinding {
+  const owners = registrations.filter(row => row.sessionId === id);
+  const hostId = owners[0]?.hostSessionId;
+  if (owners.length !== 1 || claudeWriterConflict(id, registrations, hostId) || !hostId || !/^local_[a-f0-9-]{36}$/i.test(hostId)) throw new Error("无法唯一核实 Claude 桌面会话，请关闭重复实例后重新打开");
+  const current = resolve(id);
+  if (current.sessionId !== id || current.hostSessionId !== hostId || !current.entrypoint.startsWith("claude-desktop") ||
+      !Number.isSafeInteger(current.pid) || current.pid <= 0 || !current.procStart || !current.pidDomain || !current.cwd) throw new Error("Claude 桌面会话归属已变化，消息未发送");
+  return { sessionId: id, hostSessionId: hostId, cwd: current.cwd, pid: current.pid, procStart: current.procStart, pidDomain: current.pidDomain, entrypoint: current.entrypoint };
+}
 export function claudeWriterConflict(id: string, registrations: Live[], hostId?: string) {
   const owners = registrations.filter(row => row.sessionId === id);
   return owners.length > 1 || owners.some(row => !row.entrypoint.startsWith("claude-desktop")) ||

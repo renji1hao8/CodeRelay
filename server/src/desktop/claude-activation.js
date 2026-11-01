@@ -1,5 +1,5 @@
 (() => {
-  if (globalThis.__remoteccClaudeActivation) return;
+  if (globalThis.__remoteccClaudeActivation?.version === 2) return;
   const api = globalThis['claude.web'].LocalSessions;
   const flights = new Map();
   const normal = value => String(value || '').replaceAll('\\', '/').replace(/\/$/, '').toLowerCase();
@@ -12,11 +12,13 @@
     const text = String(reason || '').toLowerCase();
     throw new Error(/trust/.test(text) ? '请先在电脑上确认此项目的工作目录信任' : /running|liveness/.test(text) ? '这条会话仍被其他进程占用，请先结束重复实例' : /folder|directory/.test(text) ? '这条会话的工作目录不存在' : '桌面暂时无法恢复此会话，请在电脑上检查项目与会话状态');
   };
-  async function verify(hostId, identity) {
+  async function verify(hostId, identity, registeredHostId) {
     // Native resumeCliSession adopts a CLI transcript under local_<cliId>.
     // A fork can retain all original UUIDs; matching shared history alone does
     // not authorize targeting its different Desktop session.
-    if (hostId !== `local_${identity.id}`) throw new Error('桌面会话标识与原历史不一致，未续接');
+    // A running Desktop session may use a host ID different from its CLI
+    // transcript ID. Only the process-verified native registry can supply it.
+    if (hostId !== (registeredHostId ?? `local_${identity.id}`)) throw new Error('桌面会话标识与原历史不一致，未续接');
     const session = await api.getSession(hostId);
     if (!session || session.sessionId !== hostId || session.remoteTarget || normal(session.cwd) !== normal(identity.cwd)) throw new Error('桌面会话归属已变化，请重新打开');
     const tail = await api.getTranscriptTail(hostId, 500);
@@ -53,12 +55,14 @@
     return { hostId };
   }
   globalThis.__remoteccClaudeActivation = {
+    version: 2,
+    verify(hostId, identity, registeredHostId) { return verify(hostId, identity, registeredHostId).then(() => true); },
     open(identity) {
       if (flights.has(identity.id)) return flights.get(identity.id);
       const work = open(identity).finally(() => flights.delete(identity.id)); flights.set(identity.id, work); return work;
     },
-    async send(hostId, identity, text, messageUuid) {
-      await verify(hostId, identity);
+    async send(hostId, identity, text, messageUuid, registeredHostId) {
+      await verify(hostId, identity, registeredHostId);
       // Exact Desktop preload signature. Do not mark a synthetic physical-page
       // press or change permission mode; reject undelivered sends explicitly.
       await api.sendMessage(hostId, text, undefined, undefined, undefined, undefined, undefined, messageUuid, undefined, undefined, undefined, undefined, undefined, undefined, { rejectUndelivered: true });
